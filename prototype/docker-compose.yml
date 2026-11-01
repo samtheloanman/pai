@@ -32,6 +32,7 @@ services:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       SPEACHES_URL: http://speaches:8000
       PAI_VAULT_KEY: ${PAI_VAULT_KEY:?set PAI_VAULT_KEY in .env}
+      AUDIT_CONTENT: ${AUDIT_CONTENT:-0}
     volumes: [data:/data]
     ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
     depends_on: [litellm, speaches]

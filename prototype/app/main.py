@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 from contextlib import asynccontextmanager, closing
 
 import httpx
@@ -17,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import embed, routing, store, vault
+from pai import audit, embed, routing, store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -82,16 +83,41 @@ def system_prompt(query: str) -> str:
     return "\n\n".join(lines)
 
 
+def audited(kind: str, **fields) -> int:
+    """Write the audit entry or fail the request: a box that cannot audit must not silently act."""
+    try:
+        return audit.record(kind, **fields)
+    except Exception:
+        log.exception("audit write failed (%s)", kind)
+        raise HTTPException(500, "audit log unavailable") from None
+
+
+def audit_model(model: str, t0: float, ok: bool, **extra) -> None:
+    audited("model_call", **{"gen_ai.request.model": model}, duration_ms=int((time.monotonic() - t0) * 1000), success=ok, **extra)
+
+
 async def llm(messages: list[dict], model: str | None = None, temperature: float = 0.4) -> str:
-    async with httpx.AsyncClient(timeout=300) as c:
-        r = await c.post(
-            f"{LITELLM_URL}/v1/chat/completions",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            json={"model": model or CHAT_MODEL, "messages": messages, "temperature": temperature},
-        )
+    model = model or CHAT_MODEL
+    t0 = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=300) as c:
+            r = await c.post(
+                f"{LITELLM_URL}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+                json={"model": model, "messages": messages, "temperature": temperature},
+            )
+    except httpx.HTTPError as e:
+        audit_model(model, t0, False, error=type(e).__name__)
+        raise
     if r.status_code != 200:
+        audit_model(model, t0, False, error=f"HTTP {r.status_code}")
         raise HTTPException(502, f"model error {r.status_code}: {r.text[:200]}")
-    return THINK.sub("", r.json()["choices"][0]["message"]["content"]).strip()
+    body = r.json()
+    out = THINK.sub("", body["choices"][0]["message"]["content"]).strip()
+    usage = body.get("usage") or {}
+    tokens = {f"gen_ai.usage.{k}_tokens": usage[v] for k, v in (("input", "prompt_tokens"), ("output", "completion_tokens")) if v in usage}
+    audit_model(model, t0, True, prompt=json.dumps(messages), reply=out, **tokens)
+    return out
 
 
 async def decide(text: str) -> tuple[str, float]:
@@ -174,6 +200,7 @@ def answer(a: Answer):
         raise HTTPException(400, "unknown question")
     if not a.value.strip():
         raise HTTPException(400, "answer is empty")
+    audited("config_changed", what="interview", key=a.key)
     with closing(db()) as con, con:
         con.execute("insert into profile (key, value) values (?, ?) on conflict(key) do update set value = excluded.value", (a.key, a.value.strip()))
     return interview()
@@ -188,6 +215,7 @@ async def draft_rules():
         {"role": "system", "content": "You are PAI, the owner's assistant. Write a short plain-English page with two headed lists, 'I will' and 'I won't', where 'I' is PAI describing how it will help the owner. Base it only on the interview. No preamble."},
         {"role": "user", "content": "\n".join(f"{k}: {v}" for k, v in p.items())},
     ])
+    audited("config_changed", what="rules", via="draft")
     with closing(db()) as con, con:
         con.execute("insert into rules (id, text) values (1, ?) on conflict(id) do update set text = excluded.text", (text,))
     return {"text": text}
@@ -200,6 +228,7 @@ def get_rules():
 
 @app.put("/api/rules")
 def put_rules(r: RulesIn):
+    audited("config_changed", what="rules", via="edit")
     with closing(db()) as con, con:
         con.execute("insert into rules (id, text) values (1, ?) on conflict(id) do update set text = excluded.text", (r.text,))
     return {"text": r.text}
@@ -213,27 +242,36 @@ def memories():
 
 @app.delete("/api/memories/{mid}")
 def forget(mid: int):
+    audited("memory_deleted", memory_id=mid)  # before the delete: if it cannot be logged, it does not happen
     with closing(db()) as con, con:
         con.execute("delete from memories where id = ?", (mid,))
     return {"ok": True}
 
 
-def add_memory(text: str) -> None:
+def add_memory(text: str) -> int:
     with closing(db()) as con:
         try:
-            vault.add_memory(con, text, embed=embed.embed)
+            return vault.add_memory(con, text, embed=embed.embed)
         except Exception as e:  # embedder unavailable: store for keyword search only
             log.warning("memory saved without vector: %s", e)
-            vault.add_memory(con, text)
+            return vault.add_memory(con, text)
 
 
 async def reply_to(message: str, history: list[dict]) -> str:
     message = message[: routing.MAX_CHARS]
     r = await routing.route(message, embed=embed.embed, decide=decide)
+    audited("route", **{"pai.route": r.name}, tier=r.tier, score=r.score)
     # only the rule tier may write memory or prompt for approval; a model verdict never does
     if r.name == "remember" and r.tier == 1:
         m = re.match(r"^\s*remember(?: that)?[:,]?\s+(.+)", message, re.I | re.S)
-        add_memory(m.group(1).strip())
+        text = m.group(1).strip()
+        mid = add_memory(text)  # id is only known after the insert, so undo it if the audit write fails
+        try:
+            audited("memory_added", memory_id=mid, text=text)
+        except HTTPException:
+            with closing(db()) as con, con:
+                con.execute("delete from memories where id = ?", (mid,))
+            raise
         return "Saved to memory on this box."
     if r.name == "action" and r.tier == 1:
         return "That needs your approval."  # placeholder until the approval flow exists; takes no action
@@ -256,15 +294,28 @@ async def chat(c: Chat):
 
 
 async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: str) -> str:
+    t0 = time.monotonic()
     t = await c.post(
         f"{LITELLM_URL}/v1/audio/transcriptions",
         headers={"Authorization": f"Bearer {LITELLM_KEY}"},
         data={"model": STT_MODEL},
         files={"file": (name, data, ctype)},
     )
+    audit_model(STT_MODEL, t0, t.status_code == 200, **({} if t.status_code == 200 else {"error": f"HTTP {t.status_code}"}))
     if t.status_code != 200:
         raise HTTPException(502, f"speech-to-text error {t.status_code}: {t.text[:200]}")
     return t.json().get("text", "").strip()
+
+
+async def synthesize(c: httpx.AsyncClient, text: str):
+    t0 = time.monotonic()
+    s = await c.post(
+        f"{LITELLM_URL}/v1/audio/speech",
+        headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+        json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
+    )
+    audit_model(TTS_MODEL, t0, s.status_code == 200, **({} if s.status_code == 200 else {"error": f"HTTP {s.status_code}"}))
+    return s
 
 
 @app.post("/api/transcribe")
@@ -287,11 +338,7 @@ async def speak(body: Speak):
     if not body.text.strip():
         raise HTTPException(400, "text is empty")
     async with httpx.AsyncClient(timeout=300) as c:
-        s = await c.post(
-            f"{LITELLM_URL}/v1/audio/speech",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            json={"model": TTS_MODEL, "input": body.text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
-        )
+        s = await synthesize(c, body.text)
     if s.status_code != 200:
         raise HTTPException(502, f"text-to-speech error {s.status_code}")
     return {"audio": base64.b64encode(s.content).decode()}
@@ -303,17 +350,23 @@ async def voice(audio: UploadFile):
     data = await audio.read()
     if not data:
         raise HTTPException(400, "no audio")
-    headers = {"Authorization": f"Bearer {LITELLM_KEY}"}
     async with httpx.AsyncClient(timeout=300) as c:
         heard = await transcribe_bytes(c, data, audio.filename or "speech.webm", audio.content_type or "audio/webm")
         reply = await reply_to(heard, []) if heard else "I didn't catch that."
-        s = await c.post(
-            f"{LITELLM_URL}/v1/audio/speech",
-            headers=headers,
-            json={"model": TTS_MODEL, "input": reply[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
-        )
+        s = await synthesize(c, reply)
     audio_b64 = base64.b64encode(s.content).decode() if s.status_code == 200 else None
     return {"heard": heard, "reply": reply, "audio": audio_b64}
+
+
+@app.get("/api/activity")
+def activity(kind: str | None = None, limit: int = 100):
+    return audit.entries(limit=limit, kind=kind)
+
+
+@app.get("/api/activity/verify")
+def activity_verify():
+    bad = audit.verify()
+    return {"intact": bad is None, "first_broken": bad}
 
 
 @app.get("/api/health")

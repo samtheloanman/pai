@@ -38,7 +38,9 @@ class VaultKeyError(Exception):
     """The vault is encrypted and the key is missing or wrong."""
 
 
-def connect(path: str, key: str | None = None):
+def connect(path: str, key: str | None = None, migrations: list[str] | None = None):
+    migrations = MIGRATIONS if migrations is None else migrations  # the audit db passes its own list
+    latest = len(migrations)
     con = sqlcipher.connect(path)
     try:
         if key is not None:
@@ -55,12 +57,12 @@ def connect(path: str, key: str | None = None):
         sqlite_vec.load(con)
         con.enable_load_extension(False)
         version = con.execute("pragma user_version").fetchone()[0]
-        if version > SCHEMA_VERSION:
-            raise SchemaTooNew(f"database schema v{version} is newer than this app (v{SCHEMA_VERSION})")
-        for v in range(version, SCHEMA_VERSION):
+        if version > latest:
+            raise SchemaTooNew(f"database schema v{version} is newer than this app (v{latest})")
+        for v in range(version, latest):
             # DDL and user_version are transactional in SQLite: a failed migration rolls back whole and is retried next start
             try:
-                con.executescript(f"begin;\n{MIGRATIONS[v]}\npragma user_version = {v + 1};\ncommit;")
+                con.executescript(f"begin;\n{migrations[v]}\npragma user_version = {v + 1};\ncommit;")
             except Exception:
                 con.rollback()
                 raise
