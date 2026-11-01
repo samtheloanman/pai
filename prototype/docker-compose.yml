@@ -32,11 +32,16 @@ services:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       SPEACHES_URL: http://speaches:8000
-      PAI_VAULT_KEY: ${PAI_VAULT_KEY:?set PAI_VAULT_KEY in .env}
+      PAI_VAULT_KEY_FILE: /run/secrets/vault_key  # the key arrives as a file, not in the container's environment
       AUDIT_CONTENT: ${AUDIT_CONTENT:-0}
+    secrets: [vault_key]
     volumes: [data:/data, shared:/shared]
     ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
     depends_on: [litellm, speaches]
     restart: unless-stopped
+
+# Read from the PAI_VAULT_KEY of the shell that runs compose (scripts/pai-up fills it from the macOS Keychain) or .env.
+secrets:
+  vault_key: {environment: PAI_VAULT_KEY}
 
 volumes: {models: {}, voice: {}, data: {}, shared: {}}

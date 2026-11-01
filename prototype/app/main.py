@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import actions, audit, embed, masking, providers, routing, store, vault
+from pai import actions, audit, embed, masking, providers, routing, store, vault, vaultkey
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -48,7 +48,7 @@ THINK = re.compile(r"<think>.*?</think>", re.S)
 
 def db():
     os.makedirs(DATA_DIR, exist_ok=True)
-    return store.connect(os.path.join(DATA_DIR, "pai.db"), key=os.environ["PAI_VAULT_KEY"])
+    return store.connect(os.path.join(DATA_DIR, "pai.db"), key=vaultkey.get())
 
 
 def profile() -> dict[str, str]:
@@ -165,9 +165,11 @@ async def lifespan(_: FastAPI):
 
 
 def check_vault() -> None:
-    """Refuse to start (no silent unencrypted mode) if PAI_VAULT_KEY is missing or wrong."""
-    if not os.getenv("PAI_VAULT_KEY"):
-        raise SystemExit("PAI_VAULT_KEY is not set. Generate one with: openssl rand -hex 32 (losing it means losing the vault)")
+    """Refuse to start (no silent unencrypted mode) if the vault key is missing or wrong."""
+    try:
+        vaultkey.get()
+    except vaultkey.NoVaultKey as e:
+        raise SystemExit(str(e)) from e
     try:
         db().close()
     except vault.VaultKeyError as e:

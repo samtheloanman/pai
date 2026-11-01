@@ -36,6 +36,18 @@ openssl rand -hex 32
 
 `AUDIT_CONTENT` (default `0`): the activity log stores metadata only (event kind, route, ids, and model name and duration for model calls). Set `AUDIT_CONTENT=1` to also store message and memory text in the log.
 
+## Vault key (macOS Keychain)
+
+The app reads the vault key from a file (`PAI_VAULT_KEY_FILE`, a Compose secret), else a systemd credential `vault-key`, else the `PAI_VAULT_KEY` env var. To keep it out of `.env` and the container environment on a Mac:
+
+```bash
+scripts/pai-up new-key                        # new vault: key into the Keychain
+grep '^PAI_VAULT_KEY=' .env | cut -d= -f2- | scripts/pai-up import-key   # existing vault: move its key, then delete it from .env
+scripts/pai-up --profile local up -d --build  # any docker compose arguments
+```
+
+Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a key already in the Keychain.
+
 ## Setup mode with OpenRouter (optional)
 
 Uses a free OpenRouter model for chat so setup works before a local model is downloaded. **The interview answers leave the machine** and free models may log prompts. Voice stays local.

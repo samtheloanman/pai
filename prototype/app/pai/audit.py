@@ -22,7 +22,7 @@ import threading
 import time
 from contextlib import closing
 
-from pai import store
+from pai import store, vaultkey
 
 KINDS = {"model_call", "route", "action_proposed", "action_confirmed", "action_rejected",
          "memory_added", "memory_deleted", "outbound", "config_changed"}
@@ -42,7 +42,7 @@ MIGRATIONS = [
 
 def _con():
     con = store.connect(os.path.join(os.environ.get("DATA_DIR", "/data"), "audit.db"),
-                        key=os.environ["PAI_VAULT_KEY"], migrations=MIGRATIONS)
+                        key=vaultkey.get(), migrations=MIGRATIONS)
     con.isolation_level = None  # autocommit; record() opens its own BEGIN IMMEDIATE
     return con
 
