@@ -19,10 +19,11 @@ PROVIDERS = {"openrouter": "openrouter/", "huggingface": "huggingface/", "nvidia
              "ollama": "ollama/", "lmstudio": "lm_studio/"}
 CLOUD = ("openrouter", "nvidia", "huggingface")  # also the order pai-cloud picks the first configured one
 LOCAL_BACKENDS = ("ollama", "lmstudio")  # external local servers: no key, optional base URL in settings
-# UNVERIFIED defaults: model ids were not checked against the providers' catalogues. Editable via PUT /api/providers.
+# Checked 2026-11-01: nvidia answers a chat; openrouter is listed in its free catalogue but was rate-limited (429);
+# huggingface is UNVERIFIED. Model ids retire often. Editable via PUT /api/providers.
 DEFAULT_MODELS = {
-    "openrouter": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-    "nvidia": "nvidia_nim/meta/llama-3.3-70b-instruct",
+    "openrouter": "openrouter/google/gemma-4-31b-it:free",
+    "nvidia": "nvidia_nim/mistralai/mistral-large-4-1t-a52b",
     "huggingface": "huggingface/meta-llama/Llama-3.3-70B-Instruct",
 }
 CLOUD_SYSTEM = "You are PAI, a private assistant. Be brief and concrete."
