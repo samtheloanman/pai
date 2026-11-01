@@ -7,7 +7,6 @@ import asyncio
 import base64
 import os
 import re
-import sqlite3
 from contextlib import asynccontextmanager, closing
 
 import httpx
@@ -16,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import store
+from pai import store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -42,9 +41,9 @@ QUESTIONS = [
 THINK = re.compile(r"<think>.*?</think>", re.S)
 
 
-def db() -> sqlite3.Connection:
+def db():
     os.makedirs(DATA_DIR, exist_ok=True)
-    return store.connect(os.path.join(DATA_DIR, "pai.db"))
+    return store.connect(os.path.join(DATA_DIR, "pai.db"), key=os.environ["PAI_VAULT_KEY"])
 
 
 def profile() -> dict[str, str]:
@@ -58,15 +57,6 @@ def rules() -> str:
     return row[0] if row else ""
 
 
-def recall(query: str, limit: int = 5) -> list[str]:
-    """Memories sharing the most words (4+ letters) with the query. shortcut: keyword overlap, swap for sqlite-vec embeddings when memories exceed a few hundred."""
-    words = {w for w in re.findall(r"[a-z0-9]{4,}", query.lower())}
-    with closing(db()) as con:
-        rows = [r[0] for r in con.execute("select text from memories order by id desc").fetchall()]
-    scored = sorted(((len(words & set(re.findall(r"[a-z0-9]{4,}", m.lower()))), m) for m in rows), key=lambda x: -x[0])
-    return [m for s, m in scored[:limit] if s > 0]
-
-
 def system_prompt(query: str) -> str:
     p = profile()
     lines = [
@@ -77,7 +67,9 @@ def system_prompt(query: str) -> str:
         lines.append("About the owner:\n" + "\n".join(f"- {k}: {v}" for k, v in p.items()))
     if r := rules():
         lines.append("Rules the owner approved (follow them):\n" + r)
-    if mem := recall(query):
+    with closing(db()) as con:
+        mem = vault.search(con, query)
+    if mem:
         lines.append("Relevant memories:\n" + "\n".join(f"- {m}" for m in mem))
     return "\n\n".join(lines)
 
@@ -121,6 +113,17 @@ async def lifespan(_: FastAPI):
     yield
 
 
+def check_vault() -> None:
+    """Refuse to start (no silent unencrypted mode) if PAI_VAULT_KEY is missing or wrong."""
+    if not os.getenv("PAI_VAULT_KEY"):
+        raise SystemExit("PAI_VAULT_KEY is not set. Generate one with: openssl rand -hex 32 (losing it means losing the vault)")
+    try:
+        db().close()
+    except vault.VaultKeyError as e:
+        raise SystemExit(f"Cannot open vault: {e}") from e
+
+
+check_vault()
 app = FastAPI(title="PAI prototype", lifespan=lifespan)
 
 
@@ -198,8 +201,8 @@ def forget(mid: int):
 async def reply_to(message: str, history: list[dict]) -> str:
     m = re.match(r"^\s*remember(?: that)?[:,]?\s+(.+)", message, re.I | re.S)
     if m:
-        with closing(db()) as con, con:
-            con.execute("insert into memories (text) values (?)", (m.group(1).strip(),))
+        with closing(db()) as con:
+            vault.add_memory(con, m.group(1).strip())
         return "Saved to memory on this box."
     msgs = [{"role": "system", "content": system_prompt(message)}, *history[-10:], {"role": "user", "content": message}]
     return await llm(msgs)

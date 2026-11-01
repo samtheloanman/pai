@@ -1,5 +1,6 @@
 """SQLite storage with versioned, additive-only migrations (index = version - 1)."""
-import sqlite3
+import sqlcipher3 as sqlcipher
+import sqlite_vec
 
 MIGRATIONS: list[str] = [
     # v1: the prototype schema
@@ -23,6 +24,8 @@ MIGRATIONS: list[str] = [
         insert into memories_fts (rowid, text) values (new.id, new.text);
     end;
     """,
+    # v3: small key/value table; records the embedding dimension once the first vector is stored
+    "create table vault_meta (key text primary key, value text not null);",
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 
@@ -31,18 +34,33 @@ class SchemaTooNew(Exception):
     """The database file was written by a newer PAI than this one."""
 
 
-def connect(path: str, key: str | None = None) -> sqlite3.Connection:  # key is accepted but ignored until SQLCipher lands (Task 2)
-    con = sqlite3.connect(path)
-    version = con.execute("pragma user_version").fetchone()[0]
-    if version > SCHEMA_VERSION:
-        con.close()
-        raise SchemaTooNew(f"database schema v{version} is newer than this app (v{SCHEMA_VERSION})")
-    for v in range(version, SCHEMA_VERSION):
-        # DDL and user_version are transactional in SQLite: a failed migration rolls back whole and is retried next start
+class VaultKeyError(Exception):
+    """The vault is encrypted and the key is missing or wrong."""
+
+
+def connect(path: str, key: str | None = None):
+    con = sqlcipher.connect(path)
+    try:
+        if key is not None:
+            con.execute("pragma key = '" + key.replace("'", "''") + "'")  # quoted, never logged
         try:
-            con.executescript(f"begin;\n{MIGRATIONS[v]}\npragma user_version = {v + 1};\ncommit;")
-        except Exception:
-            con.rollback()
-            con.close()
-            raise
+            con.execute("select count(*) from sqlite_master").fetchone()  # probe: fails if the key is wrong or missing
+        except sqlcipher.DatabaseError as e:
+            raise VaultKeyError("vault key is missing or wrong (file is not a database)") from e
+        con.enable_load_extension(True)
+        sqlite_vec.load(con)
+        con.enable_load_extension(False)
+        version = con.execute("pragma user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise SchemaTooNew(f"database schema v{version} is newer than this app (v{SCHEMA_VERSION})")
+        for v in range(version, SCHEMA_VERSION):
+            # DDL and user_version are transactional in SQLite: a failed migration rolls back whole and is retried next start
+            try:
+                con.executescript(f"begin;\n{MIGRATIONS[v]}\npragma user_version = {v + 1};\ncommit;")
+            except Exception:
+                con.rollback()
+                raise
+    except BaseException:
+        con.close()
+        raise
     return con

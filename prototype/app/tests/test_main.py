@@ -1,9 +1,11 @@
 import os
+from contextlib import closing
 
 import pytest
 from fastapi.testclient import TestClient
 
 import main
+from pai import vault
 
 client = TestClient(main.app)
 
@@ -44,7 +46,8 @@ def test_remember_stores_memory_without_calling_model_and_can_be_forgotten():
 def test_recall_ranks_by_shared_words_and_skips_unrelated():
     for t in ["dentist appointment on Fridays", "favorite coffee is oat latte", "dentist is Dr Lee"]:
         client.post("/api/chat", json={"message": f"remember {t}"})
-    got = main.recall("when is my dentist appointment")
+    with closing(main.db()) as con:
+        got = vault.search(con, "when is my dentist appointment")
     assert got[0] == "dentist appointment on Fridays"
     assert "favorite coffee is oat latte" not in got
 

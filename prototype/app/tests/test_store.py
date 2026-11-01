@@ -53,15 +53,16 @@ def test_v1_db_upgrades_and_backfills_fts(path):
 
 
 def test_failed_migration_rolls_back_and_retries(path, monkeypatch):
+    base = store.SCHEMA_VERSION
     good = "create table extra (a text); create table extra2 (b text);"
     monkeypatch.setattr(store, "MIGRATIONS", [*store.MIGRATIONS, good + " this is not sql;"])
     monkeypatch.setattr(store, "SCHEMA_VERSION", len(store.MIGRATIONS))
-    with pytest.raises(sqlite3.Error):
+    with pytest.raises(store.sqlcipher.Error):
         store.connect(path)
     with closing(sqlite3.connect(path)) as raw:
-        assert raw.execute("pragma user_version").fetchone()[0] == 2
+        assert raw.execute("pragma user_version").fetchone()[0] == base
         names = {r[0] for r in raw.execute("select name from sqlite_master")}
     assert "extra" not in names and "extra2" not in names
     monkeypatch.setattr(store, "MIGRATIONS", [*store.MIGRATIONS[:-1], good])
     with closing(store.connect(path)) as con:
-        assert con.execute("pragma user_version").fetchone()[0] == 3
+        assert con.execute("pragma user_version").fetchone()[0] == base + 1
