@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 import pytest
@@ -69,3 +70,37 @@ def test_vector_dimension_mismatch_rejected_and_rolled_back(tmp_path):
     with pytest.raises(ValueError):
         vault.add_memory(con, "b", embed=lambda s: [1.0, 0.0, 0.0])
     assert con.execute("select count(*) from memories").fetchone()[0] == 1
+
+
+def test_locked_db_is_not_reported_as_wrong_key(tmp_path):
+    p = str(tmp_path / "v.db"); store.connect(p, key="k").close()
+    holder = store.connect(p, key="k")
+    holder.execute("begin exclusive")
+    try:
+        with pytest.raises(store.sqlcipher.OperationalError):
+            store.connect(p, key="k")
+    finally:
+        holder.rollback(); holder.close()
+
+
+def test_garbage_file_reports_key_error_and_creates_nothing(tmp_path):
+    p = tmp_path / "v.db"; p.write_bytes(os.urandom(4096))  # SQLCipher says "file is not a database" for this
+    with pytest.raises(vault.VaultKeyError):
+        store.connect(str(p), key="k")
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+def test_forget_removes_vector_row(tmp_path):
+    con = store.connect(str(tmp_path / "v.db"), key="k")
+    fake = lambda s: [1.0, 0.0]
+    mid = vault.add_memory(con, "dentist on Fridays", embed=fake)
+    with con:
+        con.execute("delete from memories where id = ?", (mid,))
+    assert con.execute("select count(*) from memories_vec").fetchone()[0] == 0
+    assert vault.search(con, "dentist", embed=fake) == []
+
+
+def test_secure_delete_is_on(tmp_path):
+    # simplest honest check: the pragma is on for a fresh vault connection (SQLite then zeroes deleted content in freed pages)
+    con = store.connect(str(tmp_path / "v.db"), key="k")
+    assert con.execute("pragma secure_delete").fetchone()[0] == 1

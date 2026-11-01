@@ -46,7 +46,11 @@ def connect(path: str, key: str | None = None):
         try:
             con.execute("select count(*) from sqlite_master").fetchone()  # probe: fails if the key is wrong or missing
         except sqlcipher.DatabaseError as e:
+            # only SQLCipher's "not a database" means key problem; locks, I/O and other errors propagate unchanged
+            if isinstance(e, sqlcipher.OperationalError) or "file is not a database" not in str(e):
+                raise
             raise VaultKeyError("vault key is missing or wrong (file is not a database)") from e
+        con.execute("pragma secure_delete = on")  # deleted text is overwritten in freed pages
         con.enable_load_extension(True)
         sqlite_vec.load(con)
         con.enable_load_extension(False)
