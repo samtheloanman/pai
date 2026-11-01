@@ -38,7 +38,11 @@ def connect(path: str, key: str | None = None) -> sqlite3.Connection:  # key is 
         con.close()
         raise SchemaTooNew(f"database schema v{version} is newer than this app (v{SCHEMA_VERSION})")
     for v in range(version, SCHEMA_VERSION):
-        # executescript commits first; user_version is set after each step so a crash resumes at the failed one
-        con.executescript(MIGRATIONS[v])
-        con.execute(f"pragma user_version = {v + 1}")
+        # DDL and user_version are transactional in SQLite: a failed migration rolls back whole and is retried next start
+        try:
+            con.executescript(f"begin;\n{MIGRATIONS[v]}\npragma user_version = {v + 1};\ncommit;")
+        except Exception:
+            con.rollback()
+            con.close()
+            raise
     return con

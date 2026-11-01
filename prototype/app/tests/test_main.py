@@ -1,9 +1,9 @@
 import os
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+import pytest
+from fastapi.testclient import TestClient
 
-import main  # noqa: E402
+import main
 
 client = TestClient(main.app)
 
