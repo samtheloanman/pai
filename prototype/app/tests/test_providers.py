@@ -165,6 +165,19 @@ def test_cloud_payload_has_no_owner_context_and_is_audited(vault, mock_litellm):
     assert "teal" not in json.dumps(out)
 
 
+def test_cloud_masks_pii_restores_reply_and_audits_count(vault, mock_litellm):
+    _setup_cloud(vault)
+    vault.post("/api/interview", json={"key": "name", "value": "Zed Quill"})
+    mock_litellm.reply = "Sure [NAME_1], I will write to [EMAIL_1]"
+    r = vault.post("/api/chat", json={"message": "I am Zed, email bob@example.com or call 415 555 1234", "cloud": True})
+    assert r.json()["reply"] == "Sure Zed, I will write to bob@example.com"
+    sent = json.dumps([kw["json"] for u, kw in mock_litellm.calls if kw_model((u, kw)) == "pai-cloud"])
+    assert not any(s in sent for s in ("bob@example.com", "415 555", "Zed"))
+    out = [e for e in vault.get("/api/activity?limit=50").json() if e["kind"] == "outbound"]
+    assert out[0]["fields"]["pai.masked_fields"] == 3
+    assert "bob@example.com" not in json.dumps(vault.get("/api/activity?limit=50").json())
+
+
 def kw_model(call):
     return call[1].get("json", {}).get("model")
 

@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import actions, audit, embed, providers, routing, store, vault
+from pai import actions, audit, embed, masking, providers, routing, store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -298,11 +298,12 @@ async def reply_to(message: str, history: list[dict], want_cloud: bool = False) 
     model, why = providers.cloud_decision("\n".join([message, *(str(h.get("content", "")) for h in hist)]), want_cloud)
     if model == "pai-cloud":
         # minimal fixed prompt: never the owner's profile, rules or memories
+        mk = masking.Masker([profile().get("name", "")])
         msgs = [{"role": "system", "content": providers.CLOUD_SYSTEM},
-                *({"role": "assistant" if h.get("role") == "assistant" else "user", "content": str(h.get("content", ""))} for h in hist),
-                {"role": "user", "content": message}]
-        audited("outbound", **{"pai.provider": providers.cloud_provider(), "chars": sum(len(m["content"]) for m in msgs), "pai.masked_fields": 0})
-        return await llm(msgs, model=model)
+                *({"role": "assistant" if h.get("role") == "assistant" else "user", "content": mk.mask(str(h.get("content", "")))} for h in hist),
+                {"role": "user", "content": mk.mask(message)}]
+        audited("outbound", **{"pai.provider": providers.cloud_provider(), "chars": sum(len(m["content"]) for m in msgs), "pai.masked_fields": mk.count})
+        return mk.unmask(await llm(msgs, model=model))
     msgs = [{"role": "system", "content": system_prompt(message)}, *hist, {"role": "user", "content": message}]
     out = await llm(msgs)
     return f"I kept that on this box: {why}.\n\n{out}" if want_cloud else out
