@@ -25,8 +25,8 @@ def cloud_requests():
 def test_full_flow():
     c = httpx.Client(base_url=BASE, timeout=60)
 
-    def chat(message, **kw):
-        r = c.post("/api/chat", json={"message": message, **kw})
+    def chat(message, history=(), **kw):
+        r = c.post("/api/chat", json={"message": message, "history": list(history), **kw})
         assert r.status_code == 200, r.text
         return r.json()["reply"]
 
@@ -52,7 +52,7 @@ def test_full_flow():
     assert any(m["id"] == mem["id"] for m in c.get("/api/memories").json())
     # 7 exactly one pending action, no payload
     acts = c.get("/api/actions").json()
-    assert len(acts) == 1 and "payload" not in acts[0]
+    assert len(acts) == 1 and set(acts[0]) == {"id", "kind", "summary", "created", "expires"}
     # 8 confirm -> done, memory gone; 9 second confirm -> already_done
     assert c.post(f"/api/actions/{acts[0]['id']}/confirm").json()["status"] == "done"
     assert not any(m["id"] == mem["id"] for m in c.get("/api/memories").json())
@@ -64,6 +64,11 @@ def test_full_flow():
     assert {"model_call", "route", "action_proposed", "action_confirmed", "memory_added", "memory_deleted"} <= kinds
     blob = str(log)
     assert "Miso" not in blob and not any(v in blob for v in ANSWERS.values())
+    # a second memory that stays, to make the cloud negative checks meaningful
+    assert chat("remember my lucky number is 7319") == "Saved to memory on this box."
+    n = len(fake_requests())
+    chat("what is my lucky number 7319?")  # local: memory must be retrievable
+    assert any("7319" in str(r["messages"][0]["content"]) for r in fake_requests()[n:] if r["messages"][0]["role"] == "system")
     # 11 cloud off: per-request flag alone never reaches pai-cloud
     chat("hello", cloud=True)
     assert cloud_requests() == [] and not [e for e in c.get("/api/activity?kind=outbound").json()]
@@ -72,11 +77,16 @@ def test_full_flow():
     assert c.put("/api/providers/cloud", json={"enabled": True}).status_code == 200
     assert chat(f"please check {CARD}", cloud=True).startswith("I kept that on this box:")
     assert cloud_requests() == []
-    chat("what is the capital of France", cloud=True)
+    # a history turn with a card number keeps the whole request local
+    assert chat("hi", history=[{"role": "user", "content": CARD}], cloud=True).startswith("I kept that on this box:")
+    assert cloud_requests() == []
+    chat("what is the capital of France", history=[{"role": "user", "content": "marker-hist-5521"}], cloud=True)
     sent = cloud_requests()
     assert len(sent) == 1
     payload = str(sent[0])
-    assert not any(v in payload for v in ANSWERS.values()) and "Miso" not in payload and "fake model reply" not in payload
+    assert "marker-hist-5521" in payload
+    assert not any(v in payload for v in ANSWERS.values()) and "7319" not in payload and "fake model reply" not in payload
+    assert "7319" not in str(c.get("/api/activity?limit=500").json())
     out = c.get("/api/activity?kind=outbound").json()
     assert len(out) == 1 and set(out[0]["fields"]) <= {"pai.provider", "chars", "pai.masked_fields"}
     assert out[0]["fields"]["pai.provider"] == "openrouter"
