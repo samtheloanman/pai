@@ -9,3 +9,4 @@ __pycache__/
 prototype/web/node_modules/
 prototype/app/static/index.html
 prototype/app/static/assets/
+.superpowers/
