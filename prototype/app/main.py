@@ -236,6 +236,26 @@ async def transcribe(audio: UploadFile):
         return {"text": await transcribe_bytes(c, data, audio.filename or "speech.webm", audio.content_type or "audio/webm")}
 
 
+class Speak(BaseModel):
+    text: str
+
+
+@app.post("/api/speak")
+async def speak(body: Speak):
+    """Text to speech on the box; returns base64 mp3 for the chat's read-aloud toggle."""
+    if not body.text.strip():
+        raise HTTPException(400, "text is empty")
+    async with httpx.AsyncClient(timeout=300) as c:
+        s = await c.post(
+            f"{LITELLM_URL}/v1/audio/speech",
+            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            json={"model": TTS_MODEL, "input": body.text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
+        )
+    if s.status_code != 200:
+        raise HTTPException(502, f"text-to-speech error {s.status_code}")
+    return {"audio": base64.b64encode(s.content).decode()}
+
+
 @app.post("/api/voice")
 async def voice(audio: UploadFile):
     """Speech in, speech out: transcribe, answer, speak. All three calls stay on the box via LiteLLM."""

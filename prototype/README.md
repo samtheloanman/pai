@@ -7,7 +7,7 @@ Runs the PAI software on a laptop or a cloud VM: setup interview, chat with loca
 | `llm` | llama.cpp server with a GGUF model (local mode only) | `ghcr.io/ggml-org/llama.cpp:server` |
 | `speaches` | Local speech-to-text (faster-whisper) and text-to-speech (Kokoro) | `ghcr.io/speaches-ai/speaches:latest-cpu` |
 | `litellm` | One OpenAI-compatible address for chat, STT and TTS | `ghcr.io/berriai/litellm:main-stable` |
-| `app` | PAI web app (FastAPI + one-page PWA), SQLite in the `data` volume | built from `app/` |
+| `app` | PAI web app: FastAPI back end + React chat front end (assistant-ui, Geist font), SQLite in the `data` volume | built from `app/Dockerfile` (builds `web/` first) |
 
 Prototype only: image tags are not pinned yet, no login on the app, no A/B updates.
 
@@ -52,8 +52,13 @@ or by installing Tailscale on the VM and changing the port binding to the VM's T
 3. **Chat**: type, or tap the mic for a voice turn. Say "remember …" to store a memory.
 4. **Memory**: see and forget anything PAI stored.
 
+## Front end
+
+`web/` is a Vite + React app using `@assistant-ui/react` for the chat screen. The Docker build compiles it into the Python app's static folder. Dev: `cd web && npm install && npm run dev` (proxies `/api` to :8088).
+
 ## Tests
 
 ```bash
-cd app && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest && .venv/bin/pytest -q
+cd app && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest && .venv/bin/pytest -q   # back end
+cd ../web && npm test                                                                     # front end
 ```

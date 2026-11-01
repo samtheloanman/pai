@@ -71,3 +71,7 @@ def test_empty_chat_is_rejected():
 def test_voice_endpoints_reject_empty_audio():
     for path in ("/api/voice", "/api/transcribe"):
         assert client.post(path, files={"audio": ("a.webm", b"", "audio/webm")}).status_code == 400
+
+
+def test_speak_rejects_empty_text():
+    assert client.post("/api/speak", json={"text": "  "}).status_code == 400

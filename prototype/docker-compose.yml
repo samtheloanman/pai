@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
 
   app:
-    build: ./app
+    build: {context: ., dockerfile: app/Dockerfile}
     environment:
       LITELLM_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
