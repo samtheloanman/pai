@@ -1,7 +1,4 @@
 import os
-import tempfile
-
-os.environ["DATA_DIR"] = tempfile.mkdtemp()
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

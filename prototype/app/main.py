@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from pai import store
+
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 DATA_DIR = os.getenv("DATA_DIR", "/data")
@@ -42,11 +44,7 @@ THINK = re.compile(r"<think>.*?</think>", re.S)
 
 def db() -> sqlite3.Connection:
     os.makedirs(DATA_DIR, exist_ok=True)
-    con = sqlite3.connect(os.path.join(DATA_DIR, "pai.db"))
-    con.execute("create table if not exists profile (key text primary key, value text not null)")
-    con.execute("create table if not exists memories (id integer primary key, text text not null, created text default current_timestamp)")
-    con.execute("create table if not exists rules (id integer primary key check (id = 1), text text not null)")
-    return con
+    return store.connect(os.path.join(DATA_DIR, "pai.db"))
 
 
 def profile() -> dict[str, str]:
