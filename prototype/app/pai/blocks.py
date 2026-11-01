@@ -18,13 +18,22 @@ def _luhn(d: str) -> bool:
 
 
 def allowed_for_cloud(text: str, off_limits: list[str]) -> tuple[bool, str]:
-    for m in _DIGITS.findall(text):  # every 13-19 digit window, so trailing expiry/CVV digits cannot hide a card
-        d = re.sub(r"\D", "", m)
-        # full run if 13-19 digits; sliding 15/16-digit windows (Amex/Visa/MC length) only when extra digits surround it.
-        # Not all 13-19 windows: a lone Luhn-failing 16-digit number would then pass by chance on a shorter window.
-        wins = [d] if 13 <= len(d) <= 19 else []
-        wins += [d[i:i + n] for n in (15, 16) for i in range(len(d) - n + 1)] if len(d) > 16 else []
-        if any(_luhn(w) for w in wins):
+    for m in _DIGITS.findall(text):
+        g = re.findall(r"\d+", m)
+        # candidates: the whole run, every slice of whole digit groups totalling 13-19 digits, and for one
+        # unseparated run every 13-19 digit window. Cards written in groups are caught with any digits around them.
+        cands = ["".join(g)] if len(g) < 20 else []  # a longer run only matters via its slices
+        for i in range(len(g)):
+            n = 0
+            for j in range(i, len(g)):  # groups hold >=1 digit, so this stops after at most 19 steps
+                n += len(g[j])
+                if n > 19:
+                    break
+                if n >= 13:
+                    cands.append("".join(g[i:j + 1]))
+        if len(g) == 1:
+            cands += [g[0][i:i + n] for n in range(13, 20) for i in range(len(g[0]) - n + 1)]
+        if any(13 <= len(c) <= 19 and _luhn(c) for c in cands):
             return False, "card number"
     if _SECRETS.search(text) or any(re.search(r"\d", t) and re.search(r"[A-Za-z]", t) for t in _TOKEN.findall(text)):
         return False, "secret or key"

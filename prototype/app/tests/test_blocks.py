@@ -63,3 +63,17 @@ def test_ssn_variants(text):
 
 def test_bare_nine_digits_without_keyword_allowed():
     assert blocks.allowed_for_cloud("order 123456789 shipped", []) == (True, "")
+
+
+@pytest.mark.parametrize("text", [
+    "9 3782 822463 10005", "3056 9309 0259 04 1227", "1 3056 9309 0259 04", "4222222222222 1227",
+])
+def test_card_with_adjacent_digits(text):
+    assert blocks.allowed_for_cloud(text, []) == (False, "card number")
+
+
+def test_no_catastrophic_backtracking():
+    import time
+    t0 = time.perf_counter()
+    blocks.allowed_for_cloud("1 " * 25000, [])
+    assert time.perf_counter() - t0 < 1.0
