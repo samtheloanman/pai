@@ -17,6 +17,8 @@ def _load():
 
 
 def embed(text: str) -> list[float]:
+    if os.getenv("PAI_EMBED") == "off":  # used by run-e2e.sh so the test never downloads the model
+        raise RuntimeError("embedder disabled (PAI_EMBED=off)")
     m = _load()
     with _lock:  # one ONNX session; serialise calls rather than assume it is re-entrant
         return [float(x) for x in next(iter(m.embed([text])))]
