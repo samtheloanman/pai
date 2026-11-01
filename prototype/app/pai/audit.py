@@ -5,6 +5,15 @@ entries. It cannot see the TAIL being cut off; checkpoint() stores the head hash
 verify() notices a truncation back past it (an attacker who can also rewrite the checkpoints table, or
 who holds the vault key, can still rewrite everything: this is evidence for the owner, not a defence
 against a fully compromised box).
+
+The checkpoint protects the log only up to the last clean verify: GET /api/activity/verify (and app
+startup) write one after a clean verify. Ids are `integer primary key` WITHOUT AUTOINCREMENT, so after a
+tail truncation new entries reuse the cut ids and chain cleanly onto the cut head; that is undetectable
+unless a checkpoint covered the cut entries.
+
+Hash rule: hash = sha256(json.dumps([prev_hash, ts, kind, fields_json], separators=(",", ":"))), where
+fields_json is the canonical (sort_keys, compact) JSON of the fields. JSON-encoding the list keeps the
+parts unambiguous (no way to shift characters between neighbouring fields).
 """
 import hashlib
 import json
@@ -39,7 +48,7 @@ def _con():
 
 
 def _hash(prev: str, ts: str, kind: str, fields: str) -> str:
-    return hashlib.sha256((prev + ts + kind + fields).encode()).hexdigest()
+    return hashlib.sha256(json.dumps([prev, ts, kind, fields], separators=(",", ":")).encode()).hexdigest()
 
 
 def record(kind: str, **fields) -> int:
@@ -54,12 +63,16 @@ def record(kind: str, **fields) -> int:
         try:
             row = con.execute("select hash from entries order by id desc limit 1").fetchone()
             prev = row[0] if row else ZERO
-            ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int(time.time() * 1000) % 1000:03d}Z"
+            now = time.time()  # one reading for both seconds and milliseconds
+            ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + f".{int(now * 1000) % 1000:03d}Z"
             eid = con.execute("insert into entries (ts, kind, fields, prev_hash, hash) values (?,?,?,?,?)",
                               (ts, kind, body, prev, _hash(prev, ts, kind, body))).lastrowid
             con.execute("commit")
         except BaseException:
-            con.execute("rollback")
+            try:
+                con.execute("rollback")
+            except Exception:  # e.g. "no transaction active": never mask the original error
+                pass
             raise
     return eid
 

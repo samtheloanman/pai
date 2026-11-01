@@ -24,7 +24,7 @@ def test_first_entry_links_to_zeros_and_hash_formula(audit_db):
     audit.record("route", **{"pai.route": "chat"})
     _id, ts, kind, fields, prev, h = raw_rows(audit_db)[0]
     assert prev == "0" * 64
-    assert h == hashlib.sha256((prev + ts + kind + fields).encode()).hexdigest()
+    assert h == hashlib.sha256(json.dumps([prev, ts, kind, fields], separators=(",", ":")).encode()).hexdigest()
     assert fields == '{"pai.route":"chat"}'
 
 
@@ -149,10 +149,89 @@ def test_activity_api(client, mock_litellm):
     assert client.get("/api/activity/verify").json() == {"intact": False, "first_broken": 2}
 
 
-def test_limit_is_capped_at_500(audit_db):
+def test_limit_is_capped_at_500_and_explicit_limit_is_exact(audit_db):
+    for _ in range(510): audit.record("route")
+    assert len(audit.entries(limit=10**6)) == 500
+    assert len(audit.entries(limit=3)) == 3
+
+
+def test_ts_comes_from_one_clock_reading(audit_db, monkeypatch):
+    monkeypatch.setattr(audit.time, "time", lambda: 1700000000.987)
+    audit.record("route")
+    assert audit.entries()[0]["ts"] == "2023-11-14T22:13:20.987Z"
+
+
+def test_hash_input_is_unambiguous(audit_db):
+    # shifting a character between adjacent fields must change the hash
+    assert audit._hash("ab", "c", "k", "{}") != audit._hash("a", "bc", "k", "{}")
+
+
+def test_rollback_failure_does_not_mask_original_error(audit_db, monkeypatch):
+    real = audit._con
+    class Con:
+        def __init__(self, c): self.c = c
+        def execute(self, sql, *a):
+            if sql.startswith("insert into entries"): raise ValueError("original")
+            if sql == "rollback": raise RuntimeError("no transaction active")
+            return self.c.execute(sql, *a)
+        def close(self): self.c.close()
+    monkeypatch.setattr(audit, "_con", lambda: Con(real()))
+    with pytest.raises(ValueError, match="original"):
+        audit.record("route")
+
+
+def test_verify_endpoint_checkpoints_so_later_tail_cut_is_caught(client):
     for _ in range(3): audit.record("route")
-    assert len(audit.entries(limit=10**6)) == 3
-    assert audit.MAX_LIMIT == 500
+    assert client.get("/api/activity/verify").json()["intact"] is True
+    audit._con().execute("delete from entries where id = 3")
+    r = client.get("/api/activity/verify").json()
+    assert r["intact"] is False and r["first_broken"] >= 3
+
+
+def test_verify_without_checkpoint_still_works(client):
+    assert client.get("/api/activity/verify").json() == {"intact": True, "first_broken": None}
+    audit.record("route")
+    assert client.get("/api/activity/verify").json()["intact"] is True
+
+
+def test_tampered_log_does_not_get_checkpointed(client):
+    for _ in range(3): audit.record("route", n=1)
+    audit._con().execute("update entries set fields = '{}' where id = 2")
+    assert client.get("/api/activity/verify").json() == {"intact": False, "first_broken": 2}
+    assert audit._con().execute("select count(*) from checkpoints").fetchone()[0] == 0
+
+
+def test_transcription_network_error_is_audited(client, mock_litellm):
+    mock_litellm.fail = "/audio/transcriptions"
+    r = client.post("/api/transcribe", files={"audio": ("a.webm", b"x", "audio/webm")})
+    assert r.status_code == 502
+    es = audit.entries(kind="model_call")
+    assert len(es) == 1 and es[0]["fields"]["success"] is False and es[0]["fields"]["error"] == "ConnectError"
+    assert "cannot reach" not in json.dumps(es)
+
+
+def test_speech_network_error_is_audited(client, mock_litellm):
+    mock_litellm.fail = "/audio/speech"
+    assert client.post("/api/speak", json={"text": "hi"}).status_code == 502
+    es = audit.entries(kind="model_call")
+    assert len(es) == 1 and es[0]["fields"]["gen_ai.request.model"] == "pai-tts" and es[0]["fields"]["error"] == "ConnectError"
+
+
+@pytest.mark.parametrize("body", [{"nope": 1}, {"choices": []}, {"choices": [{"message": {}}]}])
+def test_malformed_200_from_model_is_audited_and_502(client, mock_litellm, body):
+    mock_litellm.chat_body = body
+    r = client.post("/api/chat", json={"message": "tell me a story about dragons"})
+    assert r.status_code == 502
+    f = next(e["fields"] for e in audit.entries(kind="model_call") if e["fields"]["gen_ai.request.model"] == "pai-chat")
+    assert f["success"] is False and f["error"] in {"KeyError", "IndexError"}
+
+
+def test_model_error_body_secret_never_stored(client, mock_litellm):
+    mock_litellm.status = 500
+    mock_litellm.error_body = {"error": SECRET}
+    client.post("/api/chat", json={"message": f"tell me about {SECRET}"})
+    assert audit.entries(kind="model_call")
+    assert SECRET not in json.dumps(raw_rows(None))
 
 
 def test_audit_failure_fails_the_request(client, mock_litellm, monkeypatch):

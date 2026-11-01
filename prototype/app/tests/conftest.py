@@ -59,12 +59,20 @@ class MockLitellm:
         self.reply = "hello there"
         self.usage = {"prompt_tokens": 11, "completion_tokens": 7}
         self.status = 200
+        self.fail = None  # url suffix that raises an httpx error
+        self.chat_body = None  # override the 200 chat body
+        self.error_body = {"error": "boom"}
         self.calls = []
 
     def post(self, url, **kw):
         self.calls.append((url, kw))
+        if self.fail and url.endswith(self.fail):
+            import httpx
+            raise httpx.ConnectError(f"cannot reach {url}")
         if self.status != 200:
-            return _Resp(self.status, {"error": "boom"})
+            return _Resp(self.status, self.error_body)
+        if self.chat_body is not None and url.endswith("/chat/completions"):
+            return _Resp(200, self.chat_body)
         if url.endswith("/chat/completions"):
             body = {"choices": [{"message": {"content": self.reply}}]}
             if self.usage:

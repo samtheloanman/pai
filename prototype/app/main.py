@@ -112,10 +112,15 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
     if r.status_code != 200:
         audit_model(model, t0, False, error=f"HTTP {r.status_code}")
         raise HTTPException(502, f"model error {r.status_code}: {r.text[:200]}")
-    body = r.json()
-    out = THINK.sub("", body["choices"][0]["message"]["content"]).strip()
-    usage = body.get("usage") or {}
-    tokens = {f"gen_ai.usage.{k}_tokens": usage[v] for k, v in (("input", "prompt_tokens"), ("output", "completion_tokens")) if v in usage}
+    try:  # the request already left: a malformed 200 is audited as a failure before we raise
+        body = r.json()
+        out = THINK.sub("", body["choices"][0]["message"]["content"]).strip()
+        usage = body.get("usage") or {}
+        tokens = {f"gen_ai.usage.{k}_tokens": usage[v] for k, v in (("input", "prompt_tokens"), ("output", "completion_tokens")) if v in usage}
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
+        audit_model(model, t0, False, error=type(e).__name__)
+        raise HTTPException(502, "model returned a malformed response") from None
+    # written after the call: if this audit write fails the request returns 500 although the model call already happened
     audit_model(model, t0, True, prompt=json.dumps(messages), reply=out, **tokens)
     return out
 
@@ -170,6 +175,8 @@ def check_vault() -> None:
 
 
 check_vault()
+if audit.verify() is None:
+    audit.checkpoint()  # protects the log up to this boot
 app = FastAPI(title="PAI prototype", lifespan=lifespan)
 
 
@@ -242,7 +249,8 @@ def memories():
 
 @app.delete("/api/memories/{mid}")
 def forget(mid: int):
-    audited("memory_deleted", memory_id=mid)  # before the delete: if it cannot be logged, it does not happen
+    # accepted: memory_deleted is written before the delete, so it can record a delete that then fails or targets a missing id
+    audited("memory_deleted", memory_id=mid)
     with closing(db()) as con, con:
         con.execute("delete from memories where id = ?", (mid,))
     return {"ok": True}
@@ -295,12 +303,16 @@ async def chat(c: Chat):
 
 async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: str) -> str:
     t0 = time.monotonic()
-    t = await c.post(
-        f"{LITELLM_URL}/v1/audio/transcriptions",
-        headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-        data={"model": STT_MODEL},
-        files={"file": (name, data, ctype)},
-    )
+    try:
+        t = await c.post(
+            f"{LITELLM_URL}/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            data={"model": STT_MODEL},
+            files={"file": (name, data, ctype)},
+        )
+    except httpx.HTTPError as e:
+        audit_model(STT_MODEL, t0, False, error=type(e).__name__)
+        raise HTTPException(502, "speech-to-text unreachable") from None
     audit_model(STT_MODEL, t0, t.status_code == 200, **({} if t.status_code == 200 else {"error": f"HTTP {t.status_code}"}))
     if t.status_code != 200:
         raise HTTPException(502, f"speech-to-text error {t.status_code}: {t.text[:200]}")
@@ -309,11 +321,15 @@ async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: 
 
 async def synthesize(c: httpx.AsyncClient, text: str):
     t0 = time.monotonic()
-    s = await c.post(
-        f"{LITELLM_URL}/v1/audio/speech",
-        headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-        json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
-    )
+    try:
+        s = await c.post(
+            f"{LITELLM_URL}/v1/audio/speech",
+            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
+        )
+    except httpx.HTTPError as e:
+        audit_model(TTS_MODEL, t0, False, error=type(e).__name__)
+        raise HTTPException(502, "text-to-speech unreachable") from None
     audit_model(TTS_MODEL, t0, s.status_code == 200, **({} if s.status_code == 200 else {"error": f"HTTP {s.status_code}"}))
     return s
 
@@ -366,6 +382,8 @@ def activity(kind: str | None = None, limit: int = 100):
 @app.get("/api/activity/verify")
 def activity_verify():
     bad = audit.verify()
+    if bad is None:
+        audit.checkpoint()  # only a clean log is checkpointed; protects it up to now
     return {"intact": bad is None, "first_broken": bad}
 
 
