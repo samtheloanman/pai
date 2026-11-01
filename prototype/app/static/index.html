@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PAI</title>
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0E7C76">
+<style>
+:root{--bg:#F2F6F5;--card:#fff;--ink:#10201F;--muted:#566867;--line:#DCE4E3;--teal:#0E7C76;--glow:#3DD6C6}
+@media (prefers-color-scheme:dark){:root{--bg:#0C1716;--card:#13221F;--ink:#E6EFEE;--muted:#97AAA8;--line:#24383A;--teal:#3DD6C6}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;padding:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right))}
+main{max-width:720px;margin:0 auto;padding-block:24px 64px;display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{font-size:22px;margin:0}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav button{background:none;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer;font:inherit;font-size:14px}
+nav button[aria-current=true]{background:var(--teal);border-color:var(--teal);color:#fff}
+section{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+textarea,input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
+textarea{min-height:90px;resize:vertical}
+.row{display:flex;gap:8px;align-items:center}
+.row input{flex:1}
+button.primary{background:var(--teal);color:#fff;border:0;border-radius:10px;padding:10px 16px;font:inherit;cursor:pointer}
+button.ghost{background:none;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--glow);outline-offset:2px}
+.log{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto}
+.msg{padding:10px 12px;border-radius:12px;max-width:85%;white-space:pre-wrap;word-wrap:break-word}
+.me{align-self:flex-end;background:var(--teal);color:#fff}
+.pai{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
+.muted{color:var(--muted);font-size:14px}
+.mem{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);padding:6px 0}
+.rec{background:#B54A3C!important}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>PAI</h1>
+    <nav aria-label="Sections">
+      <button data-tab="setup">Setup</button>
+      <button data-tab="chat">Chat</button>
+      <button data-tab="rules">Rules</button>
+      <button data-tab="memory">Memory</button>
+    </nav>
+  </header>
+
+  <section id="setup" hidden>
+    <p class="muted" id="progress"></p>
+    <label for="answer"><strong id="question"></strong></label>
+    <textarea id="answer"></textarea>
+    <div class="row"><button class="primary" id="next">Next</button><button class="ghost" id="speakAnswer" title="Answer by voice">🎤 Speak</button></div>
+    <div id="finish" hidden>
+      <p>Interview done. PAI will draft what it will and won't do. You can edit it on the Rules tab.</p>
+      <button class="primary" id="draft">Draft my rules</button>
+    </div>
+  </section>
+
+  <section id="chat" hidden>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="row">
+      <input id="msg" placeholder="Ask PAI, or say “remember …”" autocomplete="off">
+      <button class="primary" id="send">Send</button>
+      <button class="ghost" id="talk" title="Hold a voice conversation">🎤</button>
+    </div>
+    <p class="muted">Inference runs on this box unless setup mode uses a cloud model. Voice stays on the box.</p>
+  </section>
+
+  <section id="rules" hidden>
+    <label for="rulesText"><strong>What PAI will and won't do</strong></label>
+    <textarea id="rulesText" style="min-height:260px"></textarea>
+    <div class="row"><button class="primary" id="saveRules">Save</button><span class="muted" id="rulesStatus"></span></div>
+  </section>
+
+  <section id="memory" hidden>
+    <strong>What PAI remembers</strong>
+    <div id="mems"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id)
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(body.detail || `Request failed (${r.status})`)
+  return body
+}
+let current = null, history = []
+
+function show(tab) {
+  for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== tab
+  for (const b of document.querySelectorAll('nav button')) b.setAttribute('aria-current', b.dataset.tab === tab)
+  if (tab === 'rules') api('/api/rules').then((r) => ($('rulesText').value = r.text))
+  if (tab === 'memory') loadMems()
+}
+document.querySelectorAll('nav button').forEach((b) => (b.onclick = () => show(b.dataset.tab)))
+
+async function loadInterview() {
+  const s = await api('/api/interview')
+  current = s.key
+  $('progress').textContent = `Setup interview: ${s.answered} of ${s.total}`
+  $('question').textContent = s.question || 'All questions answered.'
+  $('answer').hidden = $('next').hidden = $('speakAnswer').hidden = s.done
+  $('finish').hidden = !s.done
+  return s
+}
+$('next').onclick = async () => {
+  const v = $('answer').value.trim()
+  if (!v) return $('answer').focus()
+  await api('/api/interview', { method: 'POST', body: JSON.stringify({ key: current, value: v }) })
+  $('answer').value = ''
+  loadInterview()
+}
+$('draft').onclick = async () => {
+  $('draft').disabled = true
+  $('draft').textContent = 'Drafting…'
+  try { await api('/api/rules/draft', { method: 'POST' }); show('rules') }
+  catch (e) { alert(e.message) }
+  finally { $('draft').disabled = false; $('draft').textContent = 'Draft my rules' }
+}
+$('saveRules').onclick = async () => {
+  await api('/api/rules', { method: 'PUT', body: JSON.stringify({ text: $('rulesText').value }) })
+  $('rulesStatus').textContent = 'Saved'
+}
+
+function add(text, who) {
+  const d = document.createElement('div')
+  d.className = `msg ${who}`
+  d.textContent = text
+  $('log').append(d)
+  $('log').scrollTop = $('log').scrollHeight
+}
+async function send() {
+  const m = $('msg').value.trim()
+  if (!m) return
+  $('msg').value = ''
+  add(m, 'me')
+  $('send').disabled = true
+  try {
+    const r = await api('/api/chat', { method: 'POST', body: JSON.stringify({ message: m, history }) })
+    add(r.reply, 'pai')
+    history.push({ role: 'user', content: m }, { role: 'assistant', content: r.reply })
+  } catch (e) { add(e.message, 'pai') }
+  $('send').disabled = false
+}
+$('send').onclick = send
+$('msg').onkeydown = (e) => e.key === 'Enter' && send()
+
+async function loadMems() {
+  const list = await api('/api/memories')
+  $('mems').replaceChildren(...(list.length ? list.map((m) => {
+    const row = document.createElement('div'); row.className = 'mem'
+    const t = document.createElement('span'); t.textContent = m.text
+    const b = document.createElement('button'); b.className = 'ghost'; b.textContent = 'Forget'
+    b.onclick = async () => { await api(`/api/memories/${m.id}`, { method: 'DELETE' }); loadMems() }
+    row.append(t, b); return row
+  }) : [Object.assign(document.createElement('p'), { className: 'muted', textContent: 'Nothing yet. Say “remember …” in chat.' })]))
+}
+
+// Voice: record in the browser, send to the box, play the spoken reply.
+async function record(button) {
+  if (button._rec) return button._rec.stop()
+  let stream
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }) }
+  catch { return alert('Microphone blocked. Allow it in the browser, over HTTPS or localhost.') }
+  const rec = new MediaRecorder(stream), chunks = []
+  rec.ondataavailable = (e) => chunks.push(e.data)
+  return new Promise((resolve) => {
+    rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); button.classList.remove('rec'); button._rec = null; resolve(new Blob(chunks, { type: rec.mimeType })) }
+    rec.start(); button.classList.add('rec'); button._rec = rec
+  })
+}
+async function voiceTurn(button, onResult) {
+  const blob = await record(button)
+  if (!blob) return
+  const fd = new FormData(); fd.append('audio', blob, 'speech.webm')
+  button.disabled = true
+  try {
+    const r = await fetch('/api/voice', { method: 'POST', body: fd }).then((x) => x.json())
+    onResult(r)
+    if (r.audio) new Audio(`data:audio/mpeg;base64,${r.audio}`).play()
+  } finally { button.disabled = false }
+}
+$('talk').onclick = () => voiceTurn($('talk'), (r) => { if (r.heard) add(r.heard, 'me'); add(r.reply || r.detail || 'Voice failed', 'pai') })
+// In setup, voice only fills the answer box; nothing is saved until you press Next.
+$('speakAnswer').onclick = async () => {
+  const blob = await record($('speakAnswer'))
+  if (!blob) return
+  const fd = new FormData(); fd.append('audio', blob, 'speech.webm')
+  const r = await fetch('/api/transcribe', { method: 'POST', body: fd }).then((x) => x.json())
+  $('answer').value = r.text || ''
+}
+
+loadInterview().then((s) => show(s.done ? 'chat' : 'setup'))
+</script>
+</body>
+</html>

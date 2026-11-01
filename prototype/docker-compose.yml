@@ -1,0 +1,38 @@
+# PAI prototype. Ports bind to 127.0.0.1 only; reach a cloud VM through Tailscale or an SSH tunnel.
+#   local mode (default):  docker compose --profile local up -d
+#   OpenRouter setup mode: LITELLM_CONFIG=litellm.openrouter.yaml docker compose up -d
+services:
+  llm:
+    profiles: [local]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: ["-hf", "${MODEL_HF:-unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M}", "--host", "0.0.0.0", "--port", "8080", "-c", "${CTX:-8192}", "--jinja"]
+    volumes: [models:/root/.cache/llama.cpp]
+    restart: unless-stopped
+
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    volumes: [voice:/home/ubuntu/.cache/huggingface/hub]
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+    volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro"]
+    restart: unless-stopped
+
+  app:
+    build: ./app
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      SPEACHES_URL: http://speaches:8000
+    volumes: [data:/data]
+    ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
+    depends_on: [litellm, speaches]
+    restart: unless-stopped
+
+volumes: {models: {}, voice: {}, data: {}}

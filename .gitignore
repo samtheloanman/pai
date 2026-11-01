@@ -2,3 +2,7 @@
 *.env
 .env*
 .ijfw/
+.env
+__pycache__/
+*.pyc
+.venv/
