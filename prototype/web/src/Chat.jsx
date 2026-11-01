@@ -1,9 +1,9 @@
 import { AssistantRuntimeProvider, ComposerPrimitive, MessagePrimitive, ThreadPrimitive, useAui, useAuiState, useLocalRuntime } from '@assistant-ui/react'
 import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ArrowUp, Mic, Square, Volume2, VolumeX } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { paiAdapter } from './api.js'
+import { ArrowUp, Cloud, Mic, Square, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { api, paiAdapter } from './api.js'
 import { useRecorder } from './useRecorder.js'
 
 const Text = () => <MarkdownTextPrimitive remarkPlugins={[remarkGfm]} />
@@ -19,7 +19,7 @@ const AssistantMessage = () => (
   </MessagePrimitive.Root>
 )
 
-function Composer({ speak, setSpeak }) {
+function Composer({ speak, setSpeak, canCloud, cloud, setCloud }) {
   const aui = useAui()
   const running = useAuiState((s) => s.thread.isRunning)
   const { recording, toggle } = useRecorder(async (blob) => {
@@ -30,6 +30,11 @@ function Composer({ speak, setSpeak }) {
   return (
     <ComposerPrimitive.Root className="composer">
       <ComposerPrimitive.Input rows={1} autoFocus placeholder="Ask PAI, or say “remember …”" aria-label="Message PAI" />
+      {canCloud && (
+        <button type="button" className="icon-btn cloud-toggle" onClick={() => setCloud(!cloud)} aria-pressed={cloud} aria-label="Allow a cloud model for this message" title="Cloud, this message only">
+          <Cloud size={18} />
+        </button>
+      )}
       <button type="button" className="icon-btn" onClick={() => setSpeak(!speak)} aria-label={speak ? 'Turn spoken replies off' : 'Turn spoken replies on'} aria-pressed={speak}>
         {speak ? <Volume2 size={18} /> : <VolumeX size={18} />}
       </button>
@@ -62,9 +67,18 @@ function useSpeak(enabled) {
 export function Chat() {
   const [speak, setSpeak] = useState(false)
   const say = useSpeak(speak)
+  const [canCloud, setCanCloud] = useState(false)
+  const [cloud, setCloudState] = useState(false)
+  const cloudRef = useRef(false)
+  const setCloud = (v) => { cloudRef.current = v; setCloudState(v) }
+  useEffect(() => {
+    api('/api/providers').then((p) => setCanCloud(p.cloud_enabled && p.providers.some((x) => x.cloud && x.has_key))).catch(() => {})
+  }, [])
   const runtime = useLocalRuntime({
     async run(opts) {
-      const result = await paiAdapter.run(opts)
+      const asked = cloudRef.current
+      setCloud(false) // per message: never remembered
+      const result = await paiAdapter.run({ ...opts, cloud: asked })
       say(result.content[0].text)
       return result
     },
@@ -78,7 +92,7 @@ export function Chat() {
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         </ThreadPrimitive.Viewport>
-        <Composer speak={speak} setSpeak={setSpeak} />
+        <Composer speak={speak} setSpeak={setSpeak} canCloud={canCloud} cloud={cloud} setCloud={setCloud} />
         <p className="note">PAI can be wrong. It asks before it sends, deletes or spends anything.</p>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>

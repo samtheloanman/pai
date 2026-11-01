@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react()],
   base: '/static/',
   build: { outDir: '../app/static', emptyOutDir: false, assetsDir: 'assets' },
-  server: { proxy: { '/api': 'http://localhost:8088' } },
+  server: { proxy: { '/api': process.env.PAI_API || 'http://localhost:8088' } },
   test: { environment: 'node' },
 })

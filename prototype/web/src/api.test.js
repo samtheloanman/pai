@@ -19,3 +19,11 @@ describe('toRequest', () => {
     expect(() => toRequest([])).toThrow('No user message')
   })
 })
+
+describe('toRequest cloud flag', () => {
+  it('omits cloud by default and sends it only when set', () => {
+    expect(toRequest([msg('user', 'hi')])).not.toHaveProperty('cloud')
+    expect(toRequest([msg('user', 'hi')], true).cloud).toBe(true)
+    expect(toRequest([msg('user', 'hi')], false)).not.toHaveProperty('cloud')
+  })
+})
