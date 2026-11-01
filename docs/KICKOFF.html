@@ -1,0 +1,267 @@
+<title>PAI Kickoff Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column with a sticky section index on wide screens; tables scroll in their own box */
+:root{
+  --bg:#F2F6F5; --surface:#FFFFFF; --ink:#10201F; --muted:#566867; --line:#DCE4E3;
+  --teal:#0E7C76; --teal-deep:#0B6B66; --glow:#3DD6C6; --warn:#9A5B12; --warn-bg:#FBF1E2; --bad:#A33A2E;
+  --display:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+  --body:"Instrument Sans",ui-sans-serif,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0C1716; --surface:#13221F; --ink:#E6EFEE; --muted:#97AAA8; --line:#24383A;
+  --teal:#3DD6C6; --teal-deep:#7FE5DA; --glow:#3DD6C6; --warn:#E7B36A; --warn-bg:#2A2114; --bad:#F08A7C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0C1716; --surface:#13221F; --ink:#E6EFEE; --muted:#97AAA8; --line:#24383A;
+  --teal:#3DD6C6; --teal-deep:#7FE5DA; --glow:#3DD6C6; --warn:#E7B36A; --warn-bg:#2A2114; --bad:#F08A7C; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1080px;margin:0 auto;padding-block:48px 96px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:56px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;font-size:13px}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:4px 0;border-left:2px solid var(--line);padding-left:12px}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--teal);border-color:var(--teal);outline:none}
+main{min-width:0}
+header.top{display:flex;flex-direction:column;gap:12px;padding-bottom:32px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--teal)}
+h1{font-family:var(--display);font-size:clamp(32px,5vw,48px);line-height:1.08;margin:0;text-wrap:balance;letter-spacing:-.01em}
+.lede{font-size:19px;color:var(--muted);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+section{padding-top:48px;display:flex;flex-direction:column;gap:16px}
+h2{font-size:26px;margin:0;text-wrap:balance;letter-spacing:-.005em}
+h3{font-size:17px;margin:8px 0 0}
+p{margin:0;max-width:68ch}
+ul,ol{margin:0;padding-left:20px;max-width:68ch;display:flex;flex-direction:column;gap:6px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap;border:1px solid currentColor}
+.done{color:var(--teal)} .open{color:var(--warn)} .block{color:var(--bad)}
+.callout{background:var(--warn-bg);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.callout strong{color:var(--warn)}
+code,.mono{font-family:var(--mono);font-size:13px}
+a{color:var(--teal)}
+.phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.phase{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.phase .when{font-family:var(--mono);font-size:12px;color:var(--teal)}
+.phase h3{margin:0}
+.phase ul{font-size:14px}
+.rules li{padding-left:2px}
+footer{padding-top:48px;color:var(--muted);font-size:13px}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr);gap:24px} nav.toc{display:none}}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <a href="#now">Where we are</a>
+  <a href="#product">Product</a>
+  <a href="#lineup">Lineup</a>
+  <a href="#economics">Economics</a>
+  <a href="#stack">Software</a>
+  <a href="#tracks">Workstreams</a>
+  <a href="#timeline">Timeline</a>
+  <a href="#decisions">Decisions</a>
+  <a href="#rules">Ground rules</a>
+  <a href="#risks">Risks</a>
+  <a href="#links">Links</a>
+</nav>
+
+<main>
+<header class="top">
+  <span class="eyebrow">Kickoff · 1 Nov 2026</span>
+  <h1>PAI: private AI server for the home</h1>
+  <p class="lede">Your AI. Your house. A small box that runs open models locally, learns who you are in a first-boot interview, and answers in the apps you already use.</p>
+  <div class="meta"><span>Owner: Sam</span><span>Status: pre-prototype</span><span>Store: live preview</span></div>
+</header>
+
+<section id="now">
+  <h2>Where we are</h2>
+  <div class="tbl"><table>
+    <tr><th>Area</th><th>State</th><th>Detail</th></tr>
+    <tr><td>Market research</td><td><span class="pill done">done</span></td><td>Local AI appliance comparison; 81 Kickstarter campaigns scraped, top 15 analyzed, competitor reward tiers verified (Olares, UGREEN, Zettlab).</td></tr>
+    <tr><td>Brand</td><td><span class="pill done">done</span></td><td>Tagline "Your AI. Your house." Teal palette, Instrument Sans. Claims register: 21 allowed claims, 12 banned.</td></tr>
+    <tr><td>Hardware research</td><td><span class="pill done">done</span></td><td>BOM with live prices, extendable Starter design, Linux mesh notes, Alibaba scan. FCC IDs and NVMe prices incomplete.</td></tr>
+    <tr><td>Spec sheet</td><td><span class="pill open">draft</span></td><td>3-page PDF. Needs contact line, images, and a check against the claims register.</td></tr>
+    <tr><td>Store</td><td><span class="pill done">live preview</span></td><td>Payload + Next.js on Vercel, Neon Postgres, Blob media. 8 products, 3-image illustration gallery each, waitlist, SEO, agent API keys. Private GitHub repo.</td></tr>
+    <tr><td>Prototype</td><td><span class="pill block">not started</span></td><td>No test units ordered yet. Blocks prices, speed numbers, photos and the campaign video.</td></tr>
+    <tr><td>Kickstarter package</td><td><span class="pill open">planned</span></td><td>Finalization plan written (decisions file, claims lint, content waves, media, funnel, QA). Not started.</td></tr>
+  </table></div>
+</section>
+
+<section id="product">
+  <h2>Product</h2>
+  <p>PAI is a Mac-mini-sized home server. Models run on the box, memory lives on the box, and nothing leaves unless the owner turns on a channel that sends it.</p>
+  <ul>
+    <li><strong>First-boot interview.</strong> About 15 minutes. PAI writes a plain-English page of what it will and will not do, which the owner can edit. A short weekly check-in keeps it current.</li>
+    <li><strong>Channels with honest privacy levels.</strong> PAI app (installable web app over the private network) at launch; Telegram and email at launch with stated caveats; Signal and Matrix planned for month 1; SIP voice later; WhatsApp and iMessage optional and unsupported.</li>
+    <li><strong>Upgradeable.</strong> Starter ships with one memory stick and a free slot, then grows with more memory, a GPU dock, or a second box.</li>
+    <li><strong>Safe updates.</strong> Signed A/B images designed to roll back if an update fails.</li>
+    <li><strong>Open source.</strong> Everything we ship is MIT or Apache. PAI OS also runs on your own x86 mini PC.</li>
+  </ul>
+</section>
+
+<section id="lineup">
+  <h2>Lineup</h2>
+  <p>Software is on sale now in the store. Hardware is published as coming soon with a waitlist; prices are announced at launch, after supplier quotes.</p>
+  <div class="tbl"><table>
+    <tr><th>SKU</th><th>What it is</th><th>Memory</th><th>Price</th></tr>
+    <tr><td>PAI OS</td><td>Software image for your own x86 mini PC, 1 year of updates</td><td>16 GB+ on your box</td><td class="num">$59</td></tr>
+    <tr><td>PAI OS + Onboarding Kit</td><td>Same image plus guided setup and developer Discord</td><td>16 GB+</td><td class="num">$149</td></tr>
+    <tr><td>PAI Care</td><td>One year of updates, model packs and email support</td><td>—</td><td class="num">$99 / yr</td></tr>
+    <tr><td>PAI Starter 16 GB</td><td>Ryzen 8745HS/8845HS-class mini PC, 2 memory slots, OCuLink; runs 7-14B models and gpt-oss-20b (planned)</td><td>1 × 16 GB</td><td class="num">at launch</td></tr>
+    <tr><td>PAI Starter 32 GB</td><td>Same box; 20-30B mixture-of-experts models (planned)</td><td>32 GB</td><td class="num">at launch</td></tr>
+    <tr><td>PAI Pro 128 GB</td><td>Strix Halo mini PC for ~120B-class models</td><td>128 GB unified</td><td class="num">at launch</td></tr>
+    <tr><td>PAI Edge</td><td>Kitchen or office touch screen that talks to a PAI box (terminal, not the model host)</td><td>8-16 GB</td><td class="num">at launch</td></tr>
+    <tr><td>GPU dock</td><td>OCuLink dock; customer brings a GPU from our tested list</td><td>—</td><td class="num">at launch</td></tr>
+  </table></div>
+  <p>Starter trade-off to state on the page: one stick runs single-channel, which roughly halves speed for models in system memory until the second slot is filled.</p>
+</section>
+
+<section id="economics">
+  <h2>Economics</h2>
+  <div class="callout">
+    <strong>Blocker: memory prices</strong>
+    <p>DDR5 roughly doubled in 2026. Live Newegg prices on 31 Oct: 2 × 32 GB SO-DIMM from $775; 2 × 16 GB $550-620. The original sub-$1k prices all lose money at retail parts cost.</p>
+  </div>
+  <div class="tbl"><table>
+    <tr><th>Build</th><th>Mid BOM (parts, retail)</th><th>Break-even price</th></tr>
+    <tr><td>32 GB box</td><td class="num">$1,133</td><td class="num">≈ $1,366</td></tr>
+    <tr><td>64 GB box</td><td class="num">$1,753</td><td class="num">≈ $2,078</td></tr>
+    <tr><td>Pro 128 GB (Strix Halo)</td><td class="num">$3,919</td><td class="num">≈ $4,568</td></tr>
+  </table></div>
+  <ul>
+    <li>Cheapest path found: factory-installed memory. A complete 32 GB / 1 TB mini PC retails around $829, so 100-unit quotes with RAM installed are the priority.</li>
+    <li>Fixed costs per unit: platform and payment fees about 8%, warranty reserve 5%, shipping and packaging, then a ~$100 profit target.</li>
+    <li>The business is software and support. Hardware margin is thin; PAI OS and PAI Care carry the model and ship first if hardware slips.</li>
+    <li>Early-bird pricing should be 28-33% off a real retail price, capped, matching what winning campaigns did.</li>
+  </ul>
+</section>
+
+<section id="stack">
+  <h2>Software on the box</h2>
+  <div class="tbl"><table>
+    <tr><th>Layer</th><th>Choice</th></tr>
+    <tr><td>OS</td><td>Headless Linux, immutable, A/B updates with rollback (pick bootc/Fedora CoreOS-style or Ubuntu Core by prototyping). Omarchy desktop only on a Dev image.</td></tr>
+    <tr><td>Inference</td><td>llama.cpp (Vulkan on AMD) behind llama-swap, OpenAI-compatible API on localhost.</td></tr>
+    <tr><td>Models</td><td>Qwen3-30B-A3B, gpt-oss-20b, Gemma-class small models; gpt-oss-120b-class on Pro. Check each model card's license before bundling.</td></tr>
+    <tr><td>Memory</td><td>SQLite + sqlite-vec for personal memory and search over local files.</td></tr>
+    <tr><td>Agent gateway</td><td>Binds to localhost and the private network only, never public interfaces.</td></tr>
+    <tr><td>Remote access</td><td>Tailscale client. Default: owner's own Tailscale account. Paid upgrade: PAI-run Headscale. NetBird, Nebula and plain WireGuard as fallbacks.</td></tr>
+    <tr><td>Voice (later)</td><td>Local wake word, speech-to-text and text-to-speech. Candidates: OpenVoiceOS on top of PAI OS, or Home Assistant's Wyoming pipeline. Needs a hands-on test and license check.</td></tr>
+    <tr><td>Interfaces</td><td>PAI web app on phone, tablet and laptop; kiosk mode on the Edge screen; chat apps.</td></tr>
+  </table></div>
+</section>
+
+<section id="tracks">
+  <h2>Workstreams</h2>
+  <h3>1 · Hardware lineup</h3>
+  <ul>
+    <li>Get specs for the 4 Alibaba edge/all-in-one candidates (CAPTCHA blocked automated reads).</li>
+    <li>Order one Starter-class box and one edge unit for testing.</li>
+    <li>Send RFQs to GMKtec, Minisforum, Beelink and the Alibaba seller: 100-unit pricing with memory installed, FCC/CE IDs.</li>
+    <li>Gate: set each retail price from real quotes.</li>
+  </ul>
+  <h3>2 · Measured performance</h3>
+  <ul>
+    <li>Build <code>pai-bench</code>: prompt and decode speed, time to first token, peak memory, wall watts, noise at 1 m.</li>
+    <li>Run per stage: base memory, full memory, GPU dock, second box.</li>
+    <li>Gate: no speed, watt or noise number goes public without a bench row.</li>
+  </ul>
+  <h3>3 · PAI OS</h3>
+  <ul>
+    <li>Image skeleton, llama.cpp + llama-swap, first-boot interview, memory store.</li>
+    <li>PAI web app, Telegram, email; Signal and Matrix next.</li>
+    <li>Ansible for box setup; test matrix across iPhone, Android, iPad, desktop and kiosk.</li>
+  </ul>
+  <h3>4 · Store and launch site</h3>
+  <ul>
+    <li>Done: store, products, galleries, waitlist, SEO, Vercel preview, Neon, Blob, GitHub.</li>
+    <li>Next: first admin account, site URL variable, Stripe test checkout, fix 16 production-build test failures, attach CI to the Dell runners, check all pages in a browser.</li>
+    <li>Later: custom domain and production deploy, translations after languages are picked.</li>
+  </ul>
+  <h3>5 · Kickstarter package</h3>
+  <ul>
+    <li>Lock a decisions file: SKUs, retail and early-bird prices, caps, ship months, goal, launch date, regions, warranty.</li>
+    <li>Claims lint script that blocks banned phrases, price mismatches, unbacked speed numbers and impossible delivery dates.</li>
+    <li>Page copy, video shot list, media, pre-launch page, PR and ops docs, QA.</li>
+    <li>Video and product photos come from the working prototype; renders only for diagrams.</li>
+  </ul>
+  <h3>6 · Content engine</h3>
+  <ul>
+    <li>Add a PAI client to the existing video engine (custom-ai-marketing). Headless generation via muapi.ai or Hugging Face; Higgsfield is OAuth-only.</li>
+    <li>All generated media passes the claims register before use.</li>
+  </ul>
+</section>
+
+<section id="timeline">
+  <h2>Timeline</h2>
+  <p>Targets. Every phase after M0 moves with the prototype date.</p>
+  <div class="phases">
+    <div class="phase"><span class="when">M0 · Nov-Dec 2026</span><h3>Prototype</h3><ul><li>Test units, pai-bench, PAI OS image</li><li>Supplier quotes</li><li>Film real prototype</li></ul></div>
+    <div class="phase"><span class="when">M1 · early 2027</span><h3>Campaign</h3><ul><li>Pre-launch page and waitlist</li><li>30-day Kickstarter</li><li>Goal ≈ $75k</li></ul></div>
+    <div class="phase"><span class="when">M2 · +1-3 months</span><h3>Build batch 1</h3><ul><li>100-300 units</li><li>Signal, Matrix, email</li><li>Pro validation</li></ul></div>
+    <div class="phase"><span class="when">M3 · +4-5 months</span><h3>Ship</h3><ul><li>PAI OS first, then Starter</li><li>Pro about 60 days later</li><li>SIP voice</li></ul></div>
+    <div class="phase"><span class="when">M4 · H2 2027</span><h3>Grow</h3><ul><li>Dev image</li><li>Local skills catalog</li><li>PAI Care subscriptions</li></ul></div>
+  </div>
+</section>
+
+<section id="decisions">
+  <h2>Decisions needed from Sam</h2>
+  <div class="tbl"><table>
+    <tr><th>Decision</th><th>Options</th><th>Recommendation</th></tr>
+    <tr><td>Pricing strategy</td><td>Reprice up · software-first · factory-RAM resale · wait for DRAM</td><td>Software-first now, repriced Pro, Starter priced from quotes</td></tr>
+    <tr><td>Test-unit spend</td><td>One Starter box + one edge unit</td><td>Approve both</td></tr>
+    <tr><td>Supplier RFQs</td><td>Send to 4 vendors</td><td>Sam sends</td></tr>
+    <tr><td>Remote access default</td><td>Owner Tailscale · PAI Headscale · self-hosted</td><td>Owner Tailscale, Headscale as paid upgrade</td></tr>
+    <tr><td>Languages</td><td>Top 10 by speakers or by market</td><td>en, es, zh-Hans, fr, de, pt, ja, ko, ar, hi</td></tr>
+    <tr><td>Campaign story</td><td>Pending approval</td><td>Decide before page copy</td></tr>
+    <tr><td>Video tools</td><td>muapi.ai · Hugging Face · Higgsfield (manual)</td><td>Confirm which keys exist</td></tr>
+    <tr><td>Store go-live</td><td>Custom domain, production, Stripe live</td><td>After prototype and prices</td></tr>
+  </table></div>
+</section>
+
+<section id="rules">
+  <h2>Ground rules</h2>
+  <ul class="rules">
+    <li>Every public sentence follows the claims register. No medical claims.</li>
+    <li>No speed, watt or noise numbers until measured on our hardware.</li>
+    <li>Telegram is not end-to-end encrypted; say so. WhatsApp and iMessage are only "optional, unsupported".</li>
+    <li>Hardware prices stay unpublished until quotes are in.</li>
+    <li>Product images are labeled illustrations until there are real prototype photos.</li>
+    <li>Use fictional names in demos, never real client or staff names.</li>
+    <li>No vendor email, ad spend, deploy to production or Kickstarter submission without Sam's OK.</li>
+  </ul>
+</section>
+
+<section id="risks">
+  <h2>Risks</h2>
+  <div class="tbl"><table>
+    <tr><th>Risk</th><th>Mitigation</th></tr>
+    <tr><td>Memory price spikes</td><td>Small base memory, free slot, factory-RAM quotes, price holds</td></tr>
+    <tr><td>Kickstarter prototype rule</td><td>Working unit on video before launch</td></tr>
+    <tr><td>Messaging network rule changes</td><td>Promise only the PAI app, Signal, Matrix, Telegram, email</td></tr>
+    <tr><td>Support load from non-technical buyers</td><td>Immutable OS, rollback, PAI Care</td></tr>
+    <tr><td>Supplier discontinues a box</td><td>Certified off-the-shelf barebones, substitute equivalents, tell backers</td></tr>
+    <tr><td>Model license changes</td><td>License check per model card before bundling</td></tr>
+    <tr><td>Small team, slipping dates</td><td>Software ships first; code public from day one</td></tr>
+  </table></div>
+</section>
+
+<section id="links">
+  <h2>Links</h2>
+  <ul>
+    <li>Store preview: <a href="https://pai-store-j287h2qx0-samtheloanmans-projects.vercel.app">pai-store-j287h2qx0-samtheloanmans-projects.vercel.app</a></li>
+    <li>Code: <span class="mono">github.com/samtheloanman/pai-store</span> (private)</li>
+    <li>Project folder: <span class="mono">aios/projects/pai/</span> (plans, brand, hardware, intel, spec sheet)</li>
+    <li>Research: <span class="mono">aios/reports/Local AI appliance market comparison.md</span></li>
+  </ul>
+</section>
+
+<footer>Prepared 1 Nov 2026 from PLAN.md, STATUS.md, BUILD-PLAN.md, the Kickstarter finalization plan and the store build. Prices and timelines are targets until quotes and the prototype are in.</footer>
+</main>
+</div>

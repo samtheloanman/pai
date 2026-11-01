@@ -1,0 +1,4 @@
+# PAI dev-box provisioning (PRD OS-9). Skeleton: roles are added as each OS requirement is built.
+- hosts: pai
+  become: true
+  roles: []
