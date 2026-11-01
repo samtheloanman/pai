@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import actions, audit, embed, routing, store, vault
+from pai import actions, audit, embed, providers, routing, store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -188,6 +188,7 @@ class Answer(BaseModel):
 class Chat(BaseModel):
     message: str
     history: list[dict] = []
+    cloud: bool = False  # the owner's per-request choice; routing never picks cloud on its own
 
 
 class RulesIn(BaseModel):
@@ -265,7 +266,7 @@ def add_memory(text: str) -> int:
             return vault.add_memory(con, text)
 
 
-async def reply_to(message: str, history: list[dict]) -> str:
+async def reply_to(message: str, history: list[dict], want_cloud: bool = False) -> str:
     message = message[: routing.MAX_CHARS]
     r = await routing.route(message, embed=embed.embed, decide=decide)
     audited("route", **{"pai.route": r.name}, tier=r.tier, score=r.score)
@@ -293,8 +294,18 @@ async def reply_to(message: str, history: list[dict]) -> str:
         except actions.AuditUnavailable:
             raise HTTPException(500, "audit log unavailable") from None
         return f'I can delete memory {mid} ("{snippet}"). Approve it on the Approvals page.'
-    msgs = [{"role": "system", "content": system_prompt(message)}, *history[-10:], {"role": "user", "content": message}]
-    return await llm(msgs)
+    hist = history[-10:]
+    model, why = providers.cloud_decision("\n".join([message, *(str(h.get("content", "")) for h in hist)]), want_cloud)
+    if model == "pai-cloud":
+        # minimal fixed prompt: never the owner's profile, rules or memories
+        msgs = [{"role": "system", "content": providers.CLOUD_SYSTEM},
+                *({"role": h.get("role", "user"), "content": str(h.get("content", ""))} for h in hist),
+                {"role": "user", "content": message}]
+        audited("outbound", **{"pai.provider": providers.cloud_provider(), "chars": sum(len(m["content"]) for m in msgs), "pai.masked_fields": 0})
+        return await llm(msgs, model=model)
+    msgs = [{"role": "system", "content": system_prompt(message)}, *hist, {"role": "user", "content": message}]
+    out = await llm(msgs)
+    return f"I kept that on this box: {why}.\n\n{out}" if want_cloud else out
 
 
 @app.post("/api/route")
@@ -308,7 +319,7 @@ async def route_only(c: Chat):
 async def chat(c: Chat):
     if not c.message.strip():
         raise HTTPException(400, "message is empty")
-    return {"reply": await reply_to(c.message, c.history)}
+    return {"reply": await reply_to(c.message, c.history, c.cloud)}
 
 
 async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: str) -> str:
@@ -417,6 +428,62 @@ def activity_verify():
     if bad is None:
         audit.checkpoint()  # only a clean log is checkpointed; protects it up to now
     return {"intact": bad is None, "first_broken": bad}
+
+
+class ProviderIn(BaseModel):
+    name: str
+    key: str | None = None
+    model: str | None = None
+    base: str | None = None  # local backends only (ollama, lmstudio)
+
+
+class CloudIn(BaseModel):
+    enabled: bool
+
+
+def providers_state() -> dict:
+    r = providers.rows()
+    return {"cloud_enabled": providers.cloud_enabled(), "warning": providers.WARNING,
+            "restart_required": providers.get_setting("restart_pending") == "1",
+            "providers": [{"name": n, "has_key": bool(r.get(n, {}).get("key")), "model": r.get(n, {}).get("model"),
+                           "cloud": n in providers.CLOUD} for n in providers.PROVIDERS]}
+
+
+def provider_change(action: str, apply, provider: str | None = None) -> None:
+    """Audit first (fail closed), then apply. Entries carry the provider name only: no key or model text."""
+    audited("config_changed", what="providers", action=action, **({"provider": provider} if provider else {}))
+    apply()
+    providers.set_setting("restart_pending", "1")
+    providers.write_files()
+
+
+@app.get("/api/providers")
+def get_providers():
+    return providers_state()
+
+
+@app.put("/api/providers")
+def put_provider(p: ProviderIn):
+    if p.name not in providers.PROVIDERS:
+        raise HTTPException(400, "unknown provider")
+    key = p.key.strip() if p.key is not None else None
+    if key is not None and (len(key) > 512 or re.search(r"\s", key)):
+        raise HTTPException(400, "key must be 512 characters or fewer with no spaces or line breaks")
+    if key and p.name in providers.LOCAL_BACKENDS:
+        raise HTTPException(400, "this provider runs on a local server and takes no key")
+    if key is not None:
+        provider_change("key_set" if key else "key_removed", lambda: providers.save_key(p.name, key), p.name)
+    if p.model is not None:
+        provider_change("model_set", lambda: providers.save_model(p.name, p.model.strip()), p.name)
+    if p.base is not None and p.name in providers.LOCAL_BACKENDS:
+        provider_change("model_set", lambda: providers.set_setting(f"{p.name}_base", p.base.strip()), p.name)
+    return {**providers_state(), "restart_required": True}
+
+
+@app.put("/api/providers/cloud")
+def put_cloud(c: CloudIn):
+    provider_change("cloud_on" if c.enabled else "cloud_off", lambda: providers.set_cloud_enabled(c.enabled))
+    return {**providers_state(), "restart_required": True}
 
 
 @app.get("/api/health")

@@ -17,12 +17,13 @@ services:
 
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
-    command: ["--config", "/config.yaml", "--port", "4000"]
+    # cloud keys + generated config come from the app via the shared volume; falls back to /config.yaml
+    entrypoint: ["sh", "-c", "set -a; [ -f /shared/litellm.env ] && . /shared/litellm.env; set +a; C=/config.yaml; [ -f /shared/litellm.generated.yaml ] && C=/shared/litellm.generated.yaml; exec litellm --config $${LITELLM_CONFIG_PATH:-$$C} --port 4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
-    volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro"]
+    volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro", "shared:/shared:ro"]
     restart: unless-stopped
 
   app:
@@ -33,9 +34,9 @@ services:
       SPEACHES_URL: http://speaches:8000
       PAI_VAULT_KEY: ${PAI_VAULT_KEY:?set PAI_VAULT_KEY in .env}
       AUDIT_CONTENT: ${AUDIT_CONTENT:-0}
-    volumes: [data:/data]
+    volumes: [data:/data, shared:/shared]
     ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
     depends_on: [litellm, speaches]
     restart: unless-stopped
 
-volumes: {models: {}, voice: {}, data: {}}
+volumes: {models: {}, voice: {}, data: {}, shared: {}}

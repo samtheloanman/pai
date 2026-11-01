@@ -31,6 +31,11 @@ MIGRATIONS: list[str] = [
     create table actions (id text primary key, kind text not null, summary text not null, payload text not null,
                           status text not null, created real not null, expires real not null, result text);
     """,
+    # v5: cloud/local provider keys (kept inside the encrypted vault) and small settings
+    """
+    create table providers (name text primary key, key text, model text, updated real);
+    create table settings (key text primary key, value text);
+    """,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

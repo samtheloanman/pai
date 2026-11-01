@@ -96,3 +96,10 @@ def mock_litellm(monkeypatch):
 
     monkeypatch.setattr(main.httpx, "AsyncClient", FakeClient)
     return m
+
+
+@pytest.fixture
+def vault(client, tmp_path, monkeypatch):
+    """Fresh empty vault + isolated /shared dir for provider tests."""
+    monkeypatch.setenv("PAI_SHARED_DIR", str(tmp_path / "shared"))
+    return client
