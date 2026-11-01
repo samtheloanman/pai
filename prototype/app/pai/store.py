@@ -26,6 +26,11 @@ MIGRATIONS: list[str] = [
     """,
     # v3: small key/value table; records the embedding dimension once the first vector is stored
     "create table vault_meta (key text primary key, value text not null);",
+    # v4: risky actions waiting for the owner's approval (see pai/actions.py)
+    """
+    create table actions (id text primary key, kind text not null, summary text not null, payload text not null,
+                          status text not null, created real not null, expires real not null, result text);
+    """,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

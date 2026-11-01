@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import audit, embed, routing, store, vault
+from pai import actions, audit, embed, routing, store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -282,7 +282,17 @@ async def reply_to(message: str, history: list[dict]) -> str:
             raise
         return "Saved to memory on this box."
     if r.name == "action" and r.tier == 1:
-        return "That needs your approval."  # placeholder until the approval flow exists; takes no action
+        mid = int(re.match(r"^\s*(?:forget|delete)\s+memory\s+(\d+)", message, re.I).group(1))
+        with closing(db()) as con:
+            row = con.execute("select text from memories where id = ?", (mid,)).fetchone()
+        if not row:
+            return f"I can't find memory {mid}."
+        snippet = row[0][:80]
+        try:  # proposing never deletes: the owner approves on the Approvals page
+            actions.propose("delete", f'Delete memory {mid}: "{snippet}"', {"executor": "delete_memory", "memory_id": mid})
+        except actions.AuditUnavailable:
+            raise HTTPException(500, "audit log unavailable") from None
+        return f'I can delete memory {mid} ("{snippet}"). Approve it on the Approvals page.'
     msgs = [{"role": "system", "content": system_prompt(message)}, *history[-10:], {"role": "user", "content": message}]
     return await llm(msgs)
 
@@ -372,6 +382,28 @@ async def voice(audio: UploadFile):
         s = await synthesize(c, reply)
     audio_b64 = base64.b64encode(s.content).decode() if s.status_code == 200 else None
     return {"heard": heard, "reply": reply, "audio": audio_b64}
+
+
+@app.get("/api/actions")
+def list_actions():
+    return actions.pending()
+
+
+@app.post("/api/actions/{aid}/confirm")
+def confirm_action(aid: str):
+    try:
+        return actions.confirm(aid)
+    except actions.AuditUnavailable:
+        raise HTTPException(500, "audit log unavailable") from None
+
+
+@app.post("/api/actions/{aid}/reject")
+def reject_action(aid: str):
+    try:
+        actions.reject(aid)
+    except actions.AuditUnavailable:
+        raise HTTPException(500, "audit log unavailable") from None
+    return {"ok": True}
 
 
 @app.get("/api/activity")

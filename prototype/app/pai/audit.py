@@ -51,7 +51,7 @@ def _hash(prev: str, ts: str, kind: str, fields: str) -> str:
     return hashlib.sha256(json.dumps([prev, ts, kind, fields], separators=(",", ":")).encode()).hexdigest()
 
 
-def record(kind: str, **fields) -> int:
+def record(kind: str, /, **fields) -> int:
     """Append one entry and return its id. Raises on any failure: callers decide what a failed audit means."""
     if kind not in KINDS:
         raise ValueError(f"unknown audit kind {kind!r}")

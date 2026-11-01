@@ -149,7 +149,7 @@ def test_forget_message_deletes_nothing():
     with closing(main.db()) as con:
         mid = vault.add_memory(con, "keep me")
     r = client.post("/api/chat", json={"message": f"forget memory {mid}"}).json()
-    assert r["reply"] == "That needs your approval."
+    assert "Approvals page" in r["reply"] and f"memory {mid}" in r["reply"]
     assert [m["text"] for m in client.get("/api/memories").json()] == ["keep me"]
 
 
