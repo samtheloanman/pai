@@ -123,8 +123,17 @@ def render_litellm_config() -> str:
     return yaml.safe_dump(cfg, sort_keys=False)
 
 
+KEY_RE = re.compile(r"[\x21-\x7e]{1,512}")  # printable ASCII only: anything else could break the shell that sources the env file
+
+
 def render_env() -> str:
-    return "".join(f"PAI_KEY_{n.upper()}={shlex.quote(v['key'])}\n" for n, v in rows().items() if n in CLOUD and v["key"])
+    out = []
+    for n, v in rows().items():
+        if n in CLOUD and v["key"]:
+            if not KEY_RE.fullmatch(v["key"]):
+                raise ValueError(f"stored key for {n} is not printable ASCII")  # never emit something that could brick litellm
+            out.append(f"PAI_KEY_{n.upper()}={shlex.quote(v['key'])}\n")
+    return "".join(out)
 
 
 def _write_if_changed(path: str, text: str, mode: int) -> None:

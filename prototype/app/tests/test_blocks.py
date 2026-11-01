@@ -46,3 +46,20 @@ def test_near_misses_pass(text):
 
 def test_empty_off_limits_entries_ignored():
     assert blocks.allowed_for_cloud("hello", ["", "  "]) == (True, "")
+
+
+@pytest.mark.parametrize("text", [
+    "4111 1111 1111 1111 12/27", "4111 1111 1111 1111 1234", "4111.1111.1111.1111", "4111  1111  1111  1111",
+    "4111 - 1111 - 1111 - 1111", "4111_1111_1111_1111",
+])
+def test_card_hidden_by_extra_digits_or_separators(text):
+    assert blocks.allowed_for_cloud(text, []) == (False, "card number")
+
+
+@pytest.mark.parametrize("text", ["123 45 6789", "123.45.6789", "123  -  45 - 6789", "my ssn is 123456789", "Social: 123456789"])
+def test_ssn_variants(text):
+    assert blocks.allowed_for_cloud(text, []) == (False, "ID number")
+
+
+def test_bare_nine_digits_without_keyword_allowed():
+    assert blocks.allowed_for_cloud("order 123456789 shipped", []) == (True, "")

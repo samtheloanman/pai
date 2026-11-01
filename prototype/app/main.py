@@ -299,7 +299,7 @@ async def reply_to(message: str, history: list[dict], want_cloud: bool = False) 
     if model == "pai-cloud":
         # minimal fixed prompt: never the owner's profile, rules or memories
         msgs = [{"role": "system", "content": providers.CLOUD_SYSTEM},
-                *({"role": h.get("role", "user"), "content": str(h.get("content", ""))} for h in hist),
+                *({"role": "assistant" if h.get("role") == "assistant" else "user", "content": str(h.get("content", ""))} for h in hist),
                 {"role": "user", "content": message}]
         audited("outbound", **{"pai.provider": providers.cloud_provider(), "chars": sum(len(m["content"]) for m in msgs), "pai.masked_fields": 0})
         return await llm(msgs, model=model)
@@ -467,8 +467,10 @@ def put_provider(p: ProviderIn):
     if p.name not in providers.PROVIDERS:
         raise HTTPException(400, "unknown provider")
     key = p.key.strip() if p.key is not None else None
-    if key is not None and (len(key) > 512 or re.search(r"\s", key)):
-        raise HTTPException(400, "key must be 512 characters or fewer with no spaces or line breaks")
+    if key and not providers.KEY_RE.fullmatch(key):
+        raise HTTPException(400, "key must be 1-512 printable ASCII characters with no spaces")
+    if p.model and not p.model.strip().startswith(providers.PROVIDERS[p.name]):
+        raise HTTPException(400, f"model must start with {providers.PROVIDERS[p.name]}")
     if key and p.name in providers.LOCAL_BACKENDS:
         raise HTTPException(400, "this provider runs on a local server and takes no key")
     if key is not None:
@@ -476,8 +478,16 @@ def put_provider(p: ProviderIn):
     if p.model is not None:
         provider_change("model_set", lambda: providers.save_model(p.name, p.model.strip()), p.name)
     if p.base is not None and p.name in providers.LOCAL_BACKENDS:
-        provider_change("model_set", lambda: providers.set_setting(f"{p.name}_base", p.base.strip()), p.name)
+        provider_change("base_set", lambda: providers.set_setting(f"{p.name}_base", p.base.strip()), p.name)
     return {**providers_state(), "restart_required": True}
+
+
+@app.post("/api/providers/restarted")
+def providers_restarted():
+    """The owner confirms they restarted litellm; clears restart_required."""
+    audited("config_changed", what="providers", action="restart_ack")
+    providers.set_setting("restart_pending", "0")
+    return providers_state()
 
 
 @app.put("/api/providers/cloud")

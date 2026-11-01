@@ -18,7 +18,7 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     # cloud keys + generated config come from the app via the shared volume; falls back to /config.yaml
-    entrypoint: ["sh", "-c", "set -a; [ -f /shared/litellm.env ] && . /shared/litellm.env; set +a; C=/config.yaml; [ -f /shared/litellm.generated.yaml ] && C=/shared/litellm.generated.yaml; exec litellm --config $${LITELLM_CONFIG_PATH:-$$C} --port 4000"]
+    entrypoint: ["sh", "-c", "set -a; [ -f /shared/litellm.env ] && . /shared/litellm.env; set +a; C=/config.yaml; [ -f /shared/litellm.generated.yaml ] && C=/shared/litellm.generated.yaml; exec litellm --config \"$${LITELLM_CONFIG_PATH:-$$C}\" --port 4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
