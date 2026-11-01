@@ -10,21 +10,21 @@
 {"text": "Who is Dana and what does she do for me", "route": "memory_query"}
 {"text": "What did I say about my daughter's recital", "route": "memory_query"}
 {"text": "What do you know about my allergies", "route": "memory_query"}
-{"text": "What's on my schedule tomorrow", "route": "calendar"}
+{"text": "Anything planned for tomorrow evening", "route": "calendar"}
 {"text": "Am I free Thursday afternoon", "route": "calendar"}
-{"text": "When is my next meeting", "route": "calendar"}
+{"text": "How long until my next appointment", "route": "calendar"}
 {"text": "What does my week look like", "route": "calendar"}
 {"text": "Find a slot for a 30 minute call with Sam next week", "route": "calendar"}
 {"text": "Do I have anything on Friday morning", "route": "calendar"}
-{"text": "Any new emails from my accountant", "route": "email"}
-{"text": "Summarize my unread email", "route": "email"}
-{"text": "Did the landlord reply yet", "route": "email"}
-{"text": "Check my inbox for the invoice from Acme", "route": "email"}
+{"text": "Has my accountant written to me lately", "route": "email"}
+{"text": "Give me a rundown of the messages I haven't read", "route": "email"}
+{"text": "Has the landlord got back to me", "route": "email"}
+{"text": "Look in my inbox for the Acme bill", "route": "email"}
 {"text": "What emails came in overnight", "route": "email"}
 {"text": "Is there an email about the flight change", "route": "email"}
-{"text": "Send an email to Sam saying I'm running late", "route": "action"}
+{"text": "Email Sam that I'll be late", "route": "action"}
 {"text": "Book a table for four on Friday at 7", "route": "action"}
-{"text": "Cancel my 3pm meeting", "route": "action"}
+{"text": "Call off the 3pm meeting", "route": "action"}
 {"text": "Forget memory 4", "route": "action"}
 {"text": "Delete memory 12", "route": "action"}
 {"text": "Pay the electric bill from my checking account", "route": "action"}

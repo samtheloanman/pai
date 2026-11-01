@@ -82,12 +82,12 @@ def system_prompt(query: str) -> str:
     return "\n\n".join(lines)
 
 
-async def llm(messages: list[dict], model: str | None = None) -> str:
+async def llm(messages: list[dict], model: str | None = None, temperature: float = 0.4) -> str:
     async with httpx.AsyncClient(timeout=300) as c:
         r = await c.post(
             f"{LITELLM_URL}/v1/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            json={"model": model or CHAT_MODEL, "messages": messages, "temperature": 0.4},
+            json={"model": model or CHAT_MODEL, "messages": messages, "temperature": temperature},
         )
     if r.status_code != 200:
         raise HTTPException(502, f"model error {r.status_code}: {r.text[:200]}")
@@ -99,11 +99,11 @@ async def decide(text: str) -> tuple[str, float]:
     out = await llm([
         {"role": "system", "content": f'Classify the owner\'s request into exactly one route from {list(routing.ROUTES)}. Reply with JSON only: {{"route": "<route>", "p": <0..1>}}'},
         {"role": "user", "content": text[: routing.MAX_CHARS]},
-    ], model=DECIDE_MODEL)
+    ], model=DECIDE_MODEL, temperature=0)
     d = json.loads(out)
     if d["route"] not in routing.ROUTES:
         raise ValueError(f"unknown route {d['route']!r}")
-    return d["route"], float(d["p"])
+    return d["route"], min(1.0, max(0.0, float(d["p"])))
 
 
 SPEACHES_URL = os.getenv("SPEACHES_URL", "")
@@ -228,12 +228,14 @@ def add_memory(text: str) -> None:
 
 
 async def reply_to(message: str, history: list[dict]) -> str:
+    message = message[: routing.MAX_CHARS]
     r = await routing.route(message, embed=embed.embed, decide=decide)
-    if r.name == "remember":
+    # only the rule tier may write memory or prompt for approval; a model verdict never does
+    if r.name == "remember" and r.tier == 1:
         m = re.match(r"^\s*remember(?: that)?[:,]?\s+(.+)", message, re.I | re.S)
         add_memory(m.group(1).strip())
         return "Saved to memory on this box."
-    if r.name == "action":
+    if r.name == "action" and r.tier == 1:
         return "That needs your approval."  # placeholder until the approval flow exists; takes no action
     msgs = [{"role": "system", "content": system_prompt(message)}, *history[-10:], {"role": "user", "content": message}]
     return await llm(msgs)

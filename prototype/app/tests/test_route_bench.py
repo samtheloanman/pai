@@ -46,3 +46,16 @@ def test_run_against_testclient_with_fakes(tmp_path):
     assert s["n"] == 2 and s["accuracy"] == 1.0 and s["per_tier"]["1"]["n"] == 2
     p = route_bench.save(s, str(tmp_path))
     assert json.load(open(p))["n"] == 2
+
+
+def test_cases_do_not_overlap_routing_examples_or_each_other():
+    import re
+    from pai import routing
+    norm = lambda s: re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()  # noqa: E731
+    examples = {norm(e) for es in routing.EXAMPLES.values() for e in es}
+    seen = set()
+    for c in route_bench.load_cases():
+        n = norm(c["text"])
+        assert n not in examples, f"overlaps an example: {c['text']}"
+        assert n not in seen, f"duplicate case: {c['text']}"
+        seen.add(n)

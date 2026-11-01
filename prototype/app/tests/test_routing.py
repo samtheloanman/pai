@@ -154,9 +154,10 @@ def test_forget_message_deletes_nothing():
 
 
 def test_route_endpoint_is_inert():
+    before = _count()
     r = client.post("/api/route", json={"message": "Remember that x"}).json()
     assert r["route"] == "remember" and r["tier"] == 1 and "score" in r
-    assert client.get("/api/memories").json() == [] or all(m["text"] != "x" for m in client.get("/api/memories").json())
+    assert _count() == before
 
 
 def test_failing_embedder_does_not_break_chat_memory(monkeypatch):
@@ -166,3 +167,49 @@ def test_failing_embedder_does_not_break_chat_memory(monkeypatch):
         raise RuntimeError("no model")
     monkeypatch.setattr(embed, "embed", boom)
     assert client.post("/api/chat", json={"message": "remember that tea is good"}).json()["reply"] == "Saved to memory on this box."
+
+
+def _count():
+    return len(client.get("/api/memories").json())
+
+
+def test_model_cannot_trigger_remember_or_action(monkeypatch):
+    async def fake_llm(messages, model=None):
+        return "chat reply"
+    monkeypatch.setattr(main, "llm", fake_llm)
+    for verdict in ("remember", "action"):
+        async def dec(t, v=verdict):
+            return v, 0.9
+        monkeypatch.setattr(main, "decide", dec)
+        before = _count()
+        r = client.post("/api/chat", json={"message": "zzqx what is the capital of France"})
+        assert r.status_code == 200 and r.json()["reply"] == "chat reply"
+        assert _count() == before
+
+
+def test_long_chat_message_truncated_before_embedder(monkeypatch):
+    from pai import embed
+    seen = []
+    monkeypatch.setattr(embed, "embed", lambda s: seen.append(len(s)) or [0.0] * 384)
+
+    async def fake_llm(messages, model=None):
+        return "ok"
+    monkeypatch.setattr(main, "llm", fake_llm)
+    client.post("/api/chat", json={"message": "zzqx " * 10_000})
+    client.post("/api/chat", json={"message": "remember " + "y" * 50_000})
+    assert seen and max(seen) <= routing.MAX_CHARS
+
+
+def test_decide_clamps_p_and_uses_temperature_zero(monkeypatch):
+    import httpx
+    bodies = []
+
+    def handler(req):
+        bodies.append(__import__("json").loads(req.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": handler.out}}]})
+    _decide_with(monkeypatch, handler)
+    handler.out = '{"route": "email", "p": 7}'
+    assert run(main.decide("x")) == ("email", 1.0)
+    handler.out = '{"route": "email", "p": -1}'
+    assert run(main.decide("x")) == ("email", 0.0)
+    assert bodies[0]["temperature"] == 0
