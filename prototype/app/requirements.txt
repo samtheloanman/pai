@@ -5,3 +5,4 @@ python-multipart==0.0.20
 pytest==8.3.4
 sqlcipher3==0.6.4
 sqlite-vec==0.1.9
+fastembed==0.9.1

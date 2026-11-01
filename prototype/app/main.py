@@ -5,6 +5,8 @@ laptop, a cloud VM or a PAI box. State lives in one SQLite file under DATA_DIR.
 """
 import asyncio
 import base64
+import json
+import logging
 import os
 import re
 from contextlib import asynccontextmanager, closing
@@ -15,12 +17,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from pai import store, vault
+from pai import embed, routing, store, vault
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "pai-chat")
+DECIDE_MODEL = os.getenv("DECIDE_MODEL", "pai-decide")
 STT_MODEL = os.getenv("STT_MODEL", "pai-stt")
 TTS_MODEL = os.getenv("TTS_MODEL", "pai-tts")
 TTS_VOICE = os.getenv("TTS_VOICE", "af_heart")
@@ -38,6 +41,7 @@ QUESTIONS = [
     ("people", "Who are the people you mention most, and who are they to you?"),
 ]
 
+log = logging.getLogger("pai")
 THINK = re.compile(r"<think>.*?</think>", re.S)
 
 
@@ -68,22 +72,38 @@ def system_prompt(query: str) -> str:
     if r := rules():
         lines.append("Rules the owner approved (follow them):\n" + r)
     with closing(db()) as con:
-        mem = vault.search(con, query)
+        try:
+            mem = vault.search(con, query, embed=embed.embed)
+        except Exception as e:  # embedder unavailable: keyword search only
+            log.warning("vector search unavailable, using keywords only: %s", e)
+            mem = vault.search(con, query)
     if mem:
         lines.append("Relevant memories:\n" + "\n".join(f"- {m}" for m in mem))
     return "\n\n".join(lines)
 
 
-async def llm(messages: list[dict]) -> str:
+async def llm(messages: list[dict], model: str | None = None) -> str:
     async with httpx.AsyncClient(timeout=300) as c:
         r = await c.post(
             f"{LITELLM_URL}/v1/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            json={"model": CHAT_MODEL, "messages": messages, "temperature": 0.4},
+            json={"model": model or CHAT_MODEL, "messages": messages, "temperature": 0.4},
         )
     if r.status_code != 200:
         raise HTTPException(502, f"model error {r.status_code}: {r.text[:200]}")
     return THINK.sub("", r.json()["choices"][0]["message"]["content"]).strip()
+
+
+async def decide(text: str) -> tuple[str, float]:
+    """Tier-3 router: ask the decision model for {"route", "p"}. Raises on any bad answer; routing maps that to chat."""
+    out = await llm([
+        {"role": "system", "content": f'Classify the owner\'s request into exactly one route from {list(routing.ROUTES)}. Reply with JSON only: {{"route": "<route>", "p": <0..1>}}'},
+        {"role": "user", "content": text[: routing.MAX_CHARS]},
+    ], model=DECIDE_MODEL)
+    d = json.loads(out)
+    if d["route"] not in routing.ROUTES:
+        raise ValueError(f"unknown route {d['route']!r}")
+    return d["route"], float(d["p"])
 
 
 SPEACHES_URL = os.getenv("SPEACHES_URL", "")
@@ -198,14 +218,32 @@ def forget(mid: int):
     return {"ok": True}
 
 
+def add_memory(text: str) -> None:
+    with closing(db()) as con:
+        try:
+            vault.add_memory(con, text, embed=embed.embed)
+        except Exception as e:  # embedder unavailable: store for keyword search only
+            log.warning("memory saved without vector: %s", e)
+            vault.add_memory(con, text)
+
+
 async def reply_to(message: str, history: list[dict]) -> str:
-    m = re.match(r"^\s*remember(?: that)?[:,]?\s+(.+)", message, re.I | re.S)
-    if m:
-        with closing(db()) as con:
-            vault.add_memory(con, m.group(1).strip())
+    r = await routing.route(message, embed=embed.embed, decide=decide)
+    if r.name == "remember":
+        m = re.match(r"^\s*remember(?: that)?[:,]?\s+(.+)", message, re.I | re.S)
+        add_memory(m.group(1).strip())
         return "Saved to memory on this box."
+    if r.name == "action":
+        return "That needs your approval."  # placeholder until the approval flow exists; takes no action
     msgs = [{"role": "system", "content": system_prompt(message)}, *history[-10:], {"role": "user", "content": message}]
     return await llm(msgs)
+
+
+@app.post("/api/route")
+async def route_only(c: Chat):
+    """Debug/bench: classify a message without executing anything."""
+    r = await routing.route(c.message, embed=embed.embed, decide=decide)
+    return {"route": r.name, "tier": r.tier, "score": r.score}
 
 
 @app.post("/api/chat")

@@ -5,6 +5,11 @@ model_list:
       model: openai/local
       api_base: http://llm:8080/v1
       api_key: none
+  - model_name: pai-decide
+    litellm_params:
+      model: openai/local
+      api_base: http://llm:8080/v1
+      api_key: none
   - model_name: pai-stt
     litellm_params:
       model: openai/Systran/faster-whisper-small
