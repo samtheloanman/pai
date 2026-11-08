@@ -80,6 +80,21 @@ def system_prompt(query: str) -> str:
             mem = vault.search(con, query)
     if mem:
         lines.append("Relevant memories:\n" + "\n".join(f"- {m}" for m in mem))
+    q_lower = query.lower()
+    if any(k in q_lower for k in ("mail", "email", "inbox")):
+        try:
+            mails = actions.list_local_mail(limit=5)
+            if mails:
+                lines.append("Local mail inbox (read-only, no egress):\n" + "\n".join(f"- [{m.get('id', '')}] {m.get('subject', '')} (folder: {m.get('folder', 'INBOX')})" for m in mails))
+        except Exception as e:
+            log.warning("local mail lookup failed: %s", e)
+    if any(k in q_lower for k in ("file", "files", "dir", "directory", "folder", "document", "documents")):
+        try:
+            files = actions.list_local_files()
+            if files:
+                lines.append("Local files (read-only, no egress):\n" + "\n".join(f"- {f['name']} ({'directory' if f['is_dir'] else f'{f['size']} bytes'})" for f in files[:10]))
+        except Exception as e:
+            log.warning("local file lookup failed: %s", e)
     return "\n\n".join(lines)
 
 
@@ -202,6 +217,17 @@ class RulesIn(BaseModel):
     text: str
 
 
+class MailSendRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+
+
+class FileWriteRequest(BaseModel):
+    filepath: str
+    content: str
+
+
 @app.get("/api/interview")
 def interview():
     p = profile()
@@ -295,6 +321,7 @@ def compile_onboarding():
             ("memory-vault", "Encrypted Memory Vault", "box_sandbox", "{}", "none", 0, 1),
             ("calendar-sync", "Calendar Synchronizer", "box_sandbox", "{}", "none", 0, 1 if "cal" in apps_lower else 0),
             ("himalaya-email", "Local Email Client", "box_sandbox", "{}", "send", 0, 1 if "mail" in apps_lower or "email" in apps_lower else 0),
+            ("local-files", "Local File Indexer & Safe Reader", "box_sandbox", "{}", "none", 0, 1),
             ("notes-manager", "Markdown Notes Manager", "box_sandbox", "{}", "none", 0, 1 if "note" in apps_lower else 0),
             ("system-terminal", "Isolated Bash Runner", "box_sandbox", "{}", "system", 0, 0),
         ]
@@ -549,6 +576,54 @@ def reject_action(aid: str):
     except actions.AuditUnavailable:
         raise HTTPException(500, "audit log unavailable") from None
     return {"ok": True}
+
+
+@app.get("/api/tools/files")
+def get_local_files(directory: str | None = None):
+    try:
+        return {"files": actions.list_local_files(directory)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/tools/files/read")
+def get_local_file(filepath: str):
+    try:
+        return {"content": actions.read_local_file(filepath)}
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/tools/files/write")
+def request_file_write(req: FileWriteRequest):
+    try:
+        aid = actions.propose_file_write(req.filepath, req.content)
+        return {"action_id": aid, "status": "pending", "message": f"Write to '{req.filepath}' proposed. Approve on Approvals page."}
+    except actions.AuditUnavailable:
+        raise HTTPException(500, "audit log unavailable") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/tools/mail")
+def get_local_mail(folder: str = "INBOX", limit: int = 20):
+    try:
+        return {"messages": actions.list_local_mail(folder=folder, limit=limit)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/tools/mail/send")
+def request_mail_send(req: MailSendRequest):
+    if not req.to.strip() or not req.subject.strip():
+        raise HTTPException(400, "recipient and subject are required")
+    try:
+        aid = actions.propose_send_mail(req.to.strip(), req.subject.strip(), req.body)
+        return {"action_id": aid, "status": "pending", "message": f"Email to '{req.to}' proposed. Approve on Approvals page."}
+    except actions.AuditUnavailable:
+        raise HTTPException(500, "audit log unavailable") from None
 
 
 @app.get("/api/activity")

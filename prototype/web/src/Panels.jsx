@@ -138,16 +138,18 @@ export function Setup({ onDone, onStatusChange }) {
     setErr('')
     try {
       await api('/api/rules/draft', { method: 'POST' })
+      await api('/api/onboarding/compile', { method: 'POST' })
       await load()
       onDone()
     } catch (e) {
       try {
         const fallbackRules = `I will:\n- Run inference, voice transcription, and memory search locally on this machine.\n- Help ${onb?.questions?.find((q) => q.key === 'name')?.answer || 'you'} with: ${onb?.questions?.find((q) => q.key === 'help')?.answer || 'daily operations and memory recall'}.\n- Communicate in your preferred style: ${onb?.questions?.find((q) => q.key === 'tone')?.answer || 'short and direct'}.\n\nI won't:\n- ${onb?.questions?.find((q) => q.key === 'off_limits')?.answer || 'Never send, delete, or spend anything without explicit approval in Approvals.'}\n- Never transmit raw memories, profile data, or long identifiers to external cloud APIs.`
         await api('/api/rules', { method: 'PUT', body: JSON.stringify({ text: fallbackRules }) })
+        await api('/api/onboarding/compile', { method: 'POST' })
         await load()
         onDone()
-      } catch {
-        setErr(e.message)
+      } catch (err) {
+        setErr(err.message)
       }
     } finally {
       setBusy(false)
@@ -361,6 +363,11 @@ export function Rules() {
   useEffect(() => { api('/api/rules').then((r) => setText(r.text)) }, [])
   const save = async () => {
     await api('/api/rules', { method: 'PUT', body: JSON.stringify({ text }) })
+    try {
+      await api('/api/onboarding/compile', { method: 'POST' })
+    } catch {
+      // If onboarding profile interview is still incomplete, persona compiles upon interview completion
+    }
     setStatus('Saved to local database.')
   }
   return (
