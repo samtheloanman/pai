@@ -3,6 +3,16 @@ const n = (v) => Number(v).toLocaleString('en-US')
 const RISK = { send: 'Sends', delete: 'Deletes', spend: 'Spends', system: 'Changes system' }
 export const riskLabel = (kind) => RISK[kind] || 'Changes system'
 
+export function isImeComposing(event) {
+  if (!event) return false
+  return Boolean(event.isComposing || event.nativeEvent?.isComposing || event.keyCode === 229)
+}
+
+export function shouldSubmitOnEnter(event) {
+  if (!event || event.key !== 'Enter' || event.shiftKey) return false
+  return !isImeComposing(event)
+}
+
 export function activityLine({ kind, fields: f = {} }) {
   const model = f['gen_ai.request.model']
   switch (kind) {

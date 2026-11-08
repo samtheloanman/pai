@@ -75,3 +75,15 @@ def test_voice_endpoints_reject_empty_audio():
 
 def test_speak_rejects_empty_text():
     assert client.post("/api/speak", json={"text": "  "}).status_code == 400
+
+
+def test_onboarding_status_and_reset():
+    ob0 = client.get("/api/onboarding").json()
+    assert ob0["done"] is False and ob0["answered"] == 0 and ob0["total"] == 8
+    assert len(ob0["questions"]) == 8
+    client.post("/api/interview", json={"key": "name", "value": "Sam"})
+    ob1 = client.get("/api/onboarding").json()
+    assert ob1["answered"] == 1 and ob1["answers"]["name"] == "Sam"
+    reset = client.post("/api/onboarding/reset").json()
+    assert reset["done"] is False and reset["answered"] == 0 and reset["answers"] == {}
+
