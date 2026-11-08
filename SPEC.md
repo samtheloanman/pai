@@ -1,0 +1,157 @@
+# PAI System Specification & Technical Documentation (SPEC.md)
+
+**Generated via `/autoresearch`**  
+**Date:** 2026-11-01  
+**Scope:** Complete Operating Architecture, Verified Subsystems, Runtime APIs & How Everything Works.
+
+---
+
+## 1. System Overview & The Core Mission
+
+PAI is a private, sovereign AI home server designed to deliver ChatGPT/Claude-grade assistance entirely from within the owner's living room.
+
+**Key Mandate:** **Your AI. Your house.**
+- All inference, memory indexing, voice transcription, and tool execution run locally on the appliance.
+- Zero inbound ports exposed to the Internet; remote access occurs strictly over encrypted WireGuard / Tailscale tunnels.
+- Zero data leaves the box unless the owner explicitly configures a personal API key and approves egress.
+
+---
+
+## 2. Hardware Lineup & Physical Enclosure
+
+| SKU | Target Retail | Compute Platform | Memory & Bandwidth | Expansion | Intended Models |
+|---|---|---|---|---|---|
+| **PAI Starter** | $899–$999 | AMD Ryzen 8945HS / 8845HS (Radeon 780M iGPU, 16 TOPS NPU) | 1×16 GB DDR5 SO-DIMM (Slot 2 open) | OCuLink port (PCIe 4.0 x4) + M.2 2280 | Qwen3-4B, 7B–14B quantized, `gpt-oss-20b` |
+| **PAI Starter+** | $1,199 | Same mini PC | 2×16 GB DDR5 (Dual channel) | OCuLink + M.2 | 14B dense, 20B–30B mixture-of-experts |
+| **PAI Dock** | $199 (bare) | External OCuLink GPU enclosure | Customer brings tested GPU (RTX 3060/4060/etc.) | High-speed PCIe interconnect | Fast FP16/int4 inference, local SDXL vision |
+| **PAI Pro** | $4,499 | AMD Strix Halo (RDNA 3.5 APU) | 128 GB unified LPDDR5X (up to 500 GB/s) | M.2 NVMe RAID | 70B–120B frontier open-weight models |
+| **PAI Edge AIO** | TBD | Fanless screen/microphone terminal | 8–16 GB | Wi-Fi 6E to primary PAI server | Kiosk display, voice client, zero local inference |
+
+---
+
+## 3. Base OS Architecture: `bootc` (Transactional Linux)
+
+The appliance runs an immutable, container-native Linux operating system built with standard OCI containers via `bootc` (Fedora CoreOS / CentOS Stream 9 kernel base):
+
+```
+                   ┌──────────────────────────────────────────────┐
+                   │               bootc OCI Image                │
+                   │ (Read-only /usr, immutable root, ostree A/B) │
+                   └──────────────────────┬───────────────────────┘
+                                          │
+                 ┌────────────────────────┴────────────────────────┐
+                 ▼                                                 ▼
+      ┌───────────────────────┐                       ┌───────────────────────┐
+      │  /etc (Mutable conf)  │                       │  /var (Mutable data)  │
+      │ • systemd Quadlets    │                       │ • /var/pai/pai.db     │
+      │ • nftables ruleset    │                       │ • /var/pai/audit.db   │
+      │ • Tailscale state     │                       │ • /var/pai/snapshots/ │
+      └───────────────────────┘                       └───────────────────────┘
+```
+
+### 3.1 Unbrickable A/B Upgrades & Automated Rollback
+- Updates arrive as standard OCI image layers (`bootc switch`).
+- **Pre-Update Snapshot Hook:** Before applying a kernel or rootfs switch, `/var/pai/pai.db` is backed up to `/var/pai/snapshots/pai-v{generation}.db`.
+- **`greenboot` Healthchecks:** Upon reboot, `greenboot` executes smoke tests (asserts systemd services are healthy, LiteLLM is reachable, and the web app responds on `127.0.0.1:8088`).
+- **Automatic Bootloader Revert:** If health checks fail within 3 minutes, the system triggers an automatic ostree rollback to the prior deployment and restores the pre-update SQLite snapshot, preventing database schema split-brain.
+
+---
+
+## 4. The PAI Software Stack (Containerized Subsystems)
+
+All services run as unprivileged systemd Quadlet containers bound strictly to `127.0.0.1`:
+
+| Service | Port (Internal) | Technology Stack | Functionality |
+|---|---|---|---|
+| **`app`** | `8088` (Exposed to LAN/Tailscale) | FastAPI + Python 3.12 + `@assistant-ui/react` | Main web interface, voice websocket, REST API, setup interview, memory management, rules editor. |
+| **`litellm`** | `4000` (Internal only) | LiteLLM Proxy | Unified OpenAI-compatible gateway across local `llama.cpp` and optional user-keyed cloud providers. |
+| **`llm`** | `8080` (Internal only) | `llama.cpp:server` | Local GGUF inference engine with Vulkan / ROCm GPU offloading. |
+| **`speaches`**| `8000` (Internal only) | faster-whisper + Kokoro TTS | Offline speech-to-text (Whisper) and realistic text-to-speech (Kokoro). Zero cloud audio leakage. |
+
+---
+
+## 5. Subsystems: Deep Dive & Verified Interfaces
+
+### 5.1 Encrypted Vault (`pai.vault`)
+- **Engine:** SQLCipher (AES-256-CBC) with `secure_delete = ON`.
+- **Hybrid Retrieval:**
+  - **Keyword Search:** SQLite FTS5 extension indexing all saved text and rules.
+  - **Vector Similarity Search:** `sqlite-vec` extension storing 384-dimensional cosine embeddings generated by local `all-MiniLM-L6-v2`.
+  - **Reciprocal Rank Fusion:** Combines FTS5 lexical scores with vector distance into a single unified relevance ranking.
+- **Key Security:** If `VAULT_KEY` is wrong or corrupted, the app raises `VaultKeyError` and **aborts execution immediately**. It never creates an empty unencrypted fallback database.
+- **Forget Cascade:** Deleting a memory row permanently purges the text, FTS index, and vector embeddings in a single atomic transaction.
+
+### 5.2 Multi-Tier Intent Routing (`pai.routing`)
+Every user prompt passes through three sequential tiers to minimize latency and protect memory:
+
+```
+User Prompt (Voice / Text)
+        │
+        ▼
+┌────────────────────────────────────────────────────────┐
+│ Tier 0: Deterministic Rule Matcher (0 ms / 0 tokens)   │
+│ • "Remember ...", "What should I call you?"            │
+│ • Hard-gated actions (spend/delete/send/change)        │
+└───────────────────────┬────────────────────────────────┘
+                        │ (unmatched)
+                        ▼
+┌────────────────────────────────────────────────────────┐
+│ Tier 1: Local Embedding Matcher (<10 ms, 80MB RAM)     │
+│ • Compares prompt embedding to pre-computed routes     │
+│ • Cosine similarity > 0.75 -> routes immediately       │
+└───────────────────────┬────────────────────────────────┘
+                        │ (ambiguous)
+                        ▼
+┌────────────────────────────────────────────────────────┐
+│ Tier 2: Model Decision Routing (Kev Pattern)           │
+│ • Prompts the primary model in a separate context slot │
+│ • Returns calibrated JSON confidence scores            │
+└────────────────────────────────────────────────────────┘
+```
+
+### 5.3 Tamper-Evident Audit Trail (`/var/pai/audit.db`)
+- **Cryptographic Chain:** Every row computes `sha256(prev_hash + timestamp + event_type + payload_json)`.
+- **Default-Zero-Content Privacy:** Logs metadata only (model name, token counts, latency, masked fields, egress IP). Raw prompt text is never recorded unless explicitly toggled by the owner.
+- **Independent Database:** Stored in a separate SQLCipher file so wiping conversation history never erases the security ledger.
+
+### 5.4 App Replacement Engine
+Allows PAI to autonomously reverse-engineer, headless-wrap, and replace SaaS/desktop applications:
+- **`morluto/rea`**: Analyzes desktop binaries, UI layouts, and Electron apps without source code.
+- **`kalil0321/reverse-api-engineer`**: Converts network traffic (HAR captures) into typed Python/TypeScript API client SDKs.
+- **`goodnight000/api-anything`**: Transforms web services into zero-browser, low-overhead JSON APIs with self-healing request schemas.
+- **`HKUDS/CLI-Anything`**: Converts desktop software (LibreOffice, Blender) into agent-callable CLI tools outputting JSON.
+- **`HelpCode-ai/anythingmcp`**: Exposes all generated tools as standardized Model Context Protocol (MCP) endpoints.
+- **Sandboxing:** All generated tools run in ephemeral, unprivileged Podman sandboxes with read-only root filesystems and zero access to `/var/pai/pai.db`.
+
+### 5.5 LAN Security Guardian
+- **Passive Device Discovery:** Real-time kernel ARP/NDP packet listener (`arpwatch` style) detects new MAC addresses the moment they join the Wi-Fi/LAN without active port sweeps.
+- **DNS Sinkhole:** Local `unbound` resolver with blocklists sinkholes telemetry from smart TVs, IoT cameras, and ad trackers.
+- **DoH Interception:** `nftables` intercepts outbound port 53 and blocks known public DoH IP addresses (Cloudflare, Google, Quad9) to prevent DNS sinkhole evasion.
+- **Host Hardening:** Automated weekly `lynis` security audits checking Linux kernel configurations and file permissions.
+
+---
+
+## 6. How to Use PAI: Complete Walkthrough
+
+### 6.1 First Boot & Voice Interview
+1. Plug the PAI appliance into power and home Ethernet.
+2. Navigate to `http://localhost:8088` (or connect over the local network via `pai.local:8088`).
+3. The Setup Interview begins automatically:
+   - Asks 8 foundational questions (e.g., name, household rules, privacy boundaries, preferred communication tone).
+   - Can be answered via typing or pressing the **🎤 Speak** button (voice transcribed locally via `speaches`).
+   - At the conclusion, PAI generates an editable system rules profile stored in `/var/pai/pai.db`.
+
+### 6.2 Conversational Chat & Memory
+- Chat via standard text or hold natural two-way voice conversations with sub-800ms response latency.
+- To store permanent knowledge, simply say: *"Remember that our Wi-Fi password is X"* or *"Remember that my dentist is Dr. Lee on Fridays"*.
+- PAI confirms: *"Saved to memory on this box."*
+- Search or forget memories at any time under the **Memory** tab.
+
+### 6.3 Approvals & Risky Actions
+- Any action that attempts to send an email, place an order, delete a database, or modify system network configs is flagged as a **Risky Action**.
+- PAI presents an **Approval Request** with a 15-minute expiration window. The action never executes until the owner taps **Approve**.
+
+### 6.4 Connecting Away from Home
+- Open the **Remote Access** tab.
+- Authenticate with your personal **Tailscale** account (or PAI Care Headscale).
+- Reach your home PAI server securely from iPhone, Android, or laptop anywhere in the world without forwarding a single router port.
