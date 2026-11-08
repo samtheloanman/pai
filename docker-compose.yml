@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pai-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  pai-os:
+    build:
+      context: ./prototype
+      dockerfile: app/Dockerfile
+    container_name: pai-os
+    ports:
+      - "8088:8088"
+    environment:
+      - PORT=8088
+      - LITELLM_URL=http://ollama:11434
+      - CHAT_MODEL=gemma3:4b
+      - DECIDE_MODEL=gemma3:4b
+      - DATA_DIR=/data
+    volumes:
+      - pai_data:/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  pai_data:
