@@ -36,6 +36,64 @@ MIGRATIONS: list[str] = [
     create table providers (name text primary key, key text, model text, updated real);
     create table settings (key text primary key, value text);
     """,
+    # v6: unified onboarding profile, personas, skills/tools, mobile nodes, and ingress connections
+    """
+    create table if not exists onboarding_profile (
+        key text primary key not null,
+        value text not null,
+        category text not null default 'identity',
+        compiled_hash text not null,
+        updated_at text not null
+    );
+    create table if not exists agent_personas (
+        persona_id text primary key not null,
+        display_name text not null,
+        system_prompt text not null,
+        loop_mode text not null default 'react',
+        preferred_model text not null default 'pai-chat',
+        quiet_hours_json text not null default '{"start":"22:00","end":"07:00"}',
+        active integer not null default 1
+    );
+    create table if not exists skills_and_tools (
+        skill_id text primary key not null,
+        title text not null,
+        execution_plane text not null,
+        schema_or_md text not null,
+        risk_kind text not null default 'none',
+        skillspector_score integer not null default 0,
+        enabled_by_onboarding integer not null default 0
+    );
+    create table if not exists mobile_voice_nodes (
+        node_id text primary key not null,
+        platform text not null,
+        tailscale_ip text not null,
+        inference_mode text not null default 'hybrid_sse',
+        on_device_model text not null default 'Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+        audio_aec_profile text not null default 'volocal_hw_aec',
+        vad_barge_in_ms integer not null default 40,
+        tts_voice text not null default 'af_heart',
+        a11y_mcp_scope text not null default 'disabled'
+    );
+    create table if not exists connections_ingress (
+        conn_id text primary key not null,
+        conn_type text not null,
+        door_plane text not null,
+        privacy_tier text not null,
+        endpoint_or_model text not null default 'local',
+        secret_key text,
+        enabled integer not null default 0,
+        updated_at real not null
+    );
+    insert or ignore into onboarding_profile (key, value, category, compiled_hash, updated_at)
+    select key, value,
+           case when key in ('name','work','people') then 'identity'
+                when key in ('off_limits','schedule') then 'boundary'
+                when key in ('apps','tone') then 'stack'
+                else 'optimization' end,
+           key || ':' || value,
+           strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+    from profile;
+    """,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

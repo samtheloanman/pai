@@ -92,6 +92,11 @@ def audited(kind: str, **fields) -> int:
         raise HTTPException(500, "audit log unavailable") from None
 
 
+def _base_v1() -> str:
+    base = LITELLM_URL.rstrip("/")
+    return base if base.endswith("/v1") else f"{base}/v1"
+
+
 def audit_model(model: str, t0: float, ok: bool, **extra) -> None:
     audited("model_call", **{"gen_ai.request.model": model}, duration_ms=int((time.monotonic() - t0) * 1000), success=ok, **extra)
 
@@ -102,7 +107,7 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
     try:
         async with httpx.AsyncClient(timeout=300) as c:
             r = await c.post(
-                f"{LITELLM_URL}/v1/chat/completions",
+                f"{_base_v1()}/chat/completions",
                 headers={"Authorization": f"Bearer {LITELLM_KEY}"},
                 json={"model": model, "messages": messages, "temperature": temperature},
             )
@@ -202,6 +207,132 @@ def interview():
     p = profile()
     nxt = next(((k, q) for k, q in QUESTIONS if k not in p), None)
     return {"done": nxt is None, "key": nxt and nxt[0], "question": nxt and nxt[1], "answered": len(p), "total": len(QUESTIONS)}
+
+
+@app.get("/api/onboarding")
+def get_onboarding():
+    p = profile()
+    r = rules()
+    nxt = next(((k, q) for k, q in QUESTIONS if k not in p), None)
+    return {
+        "done": nxt is None and bool(r.strip()),
+        "interview_done": nxt is None,
+        "rules_ready": bool(r.strip()),
+        "answered": len(p),
+        "total": len(QUESTIONS),
+        "next_key": nxt and nxt[0],
+        "next_question": nxt and nxt[1],
+        "answers": p,
+        "questions": [{"key": k, "question": q, "answer": p.get(k, "")} for k, q in QUESTIONS],
+        "rules": r,
+        "local_stack": {
+            "llm": CHAT_MODEL,
+            "decide": DECIDE_MODEL,
+            "stt": STT_MODEL,
+            "tts": TTS_MODEL,
+            "voice": TTS_VOICE,
+            "cloud_enabled": providers.cloud_enabled(),
+        },
+    }
+
+
+@app.post("/api/onboarding/reset")
+def reset_onboarding():
+    audited("config_changed", what="onboarding_reset")
+    with closing(db()) as con, con:
+        con.execute("delete from profile")
+        con.execute("delete from rules")
+    return get_onboarding()
+
+
+@app.post("/api/onboarding/compile")
+def compile_onboarding():
+    p = profile()
+    if len(p) < len(QUESTIONS):
+        raise HTTPException(400, "finish the interview first")
+    r = rules()
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    with closing(db()) as con, con:
+        # 1. Update onboarding_profile
+        for k, v in p.items():
+            cat = "identity" if k in ("name", "work", "people") else \
+                  "boundary" if k in ("off_limits", "schedule") else \
+                  "stack" if k in ("apps", "tone") else "optimization"
+            chash = f"{k}:{v}"
+            con.execute(
+                "insert into onboarding_profile (key, value, category, compiled_hash, updated_at) "
+                "values (?, ?, ?, ?, ?) on conflict(key) do update set "
+                "value = excluded.value, category = excluded.category, "
+                "compiled_hash = excluded.compiled_hash, updated_at = excluded.updated_at",
+                (k, v, cat, chash, now_iso)
+            )
+
+        # 2. Compile agent_personas
+        name = p.get("name", "Owner")
+        work = p.get("work", "")
+        tone = p.get("tone", "short and direct")
+        help_need = p.get("help", "")
+        off_limits = p.get("off_limits", "")
+        sched = p.get("schedule", "")
+        system_prompt = (
+            f"You are PAI, a sovereign private AI assistant for {name}.\n"
+            f"Owner Profile:\n- Work: {work}\n- Tone: {tone}\n- Goals: {help_need}\n- Off-limits: {off_limits}\n"
+            f"Schedule: {sched}\n"
+            f"Constitutional Rules:\n{r.strip() if r.strip() else 'Never leak data outside local device.'}"
+        )
+        con.execute(
+            "insert into agent_personas (persona_id, display_name, system_prompt, loop_mode, preferred_model, quiet_hours_json, active) "
+            "values (?, ?, ?, ?, ?, ?, 1) on conflict(persona_id) do update set "
+            "display_name = excluded.display_name, system_prompt = excluded.system_prompt, "
+            "preferred_model = excluded.preferred_model",
+            ("pai-default", "PAI Sovereign Companion", system_prompt, "react", CHAT_MODEL, '{"start":"22:00","end":"07:00"}')
+        )
+
+        # 3. Populate skills_and_tools
+        apps_lower = p.get("apps", "").lower()
+        tools = [
+            ("memory-vault", "Encrypted Memory Vault", "box_sandbox", "{}", "none", 0, 1),
+            ("calendar-sync", "Calendar Synchronizer", "box_sandbox", "{}", "none", 0, 1 if "cal" in apps_lower else 0),
+            ("himalaya-email", "Local Email Client", "box_sandbox", "{}", "send", 0, 1 if "mail" in apps_lower or "email" in apps_lower else 0),
+            ("notes-manager", "Markdown Notes Manager", "box_sandbox", "{}", "none", 0, 1 if "note" in apps_lower else 0),
+            ("system-terminal", "Isolated Bash Runner", "box_sandbox", "{}", "system", 0, 0),
+        ]
+        enabled_skills = []
+        for sid, title, plane, schema_md, risk, score, en in tools:
+            con.execute(
+                "insert into skills_and_tools (skill_id, title, execution_plane, schema_or_md, risk_kind, skillspector_score, enabled_by_onboarding) "
+                "values (?, ?, ?, ?, ?, ?, ?) on conflict(skill_id) do update set "
+                "title = excluded.title, enabled_by_onboarding = excluded.enabled_by_onboarding",
+                (sid, title, plane, schema_md, risk, score, en)
+            )
+            if en == 1:
+                enabled_skills.append(sid)
+
+        # 4. Populate connections_ingress
+        con.execute(
+            "insert into connections_ingress (conn_id, conn_type, door_plane, privacy_tier, endpoint_or_model, secret_key, enabled, updated_at) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(conn_id) do update set "
+            "enabled = excluded.enabled, updated_at = excluded.updated_at",
+            ("pai-mobile-app", "comm_channel", "door1_mesh", "A", "127.0.0.1", None, 1, time.time())
+        )
+        con.execute(
+            "insert into connections_ingress (conn_id, conn_type, door_plane, privacy_tier, endpoint_or_model, secret_key, enabled, updated_at) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(conn_id) do update set "
+            "enabled = excluded.enabled, updated_at = excluded.updated_at",
+            ("ollama", "model_provider", "door1_mesh", "A", LITELLM_URL, None, 1, time.time())
+        )
+
+    audited("config_changed", what="onboarding_compile")
+    return {
+        "ok": True,
+        "compiled_at": now_iso,
+        "persona_id": "pai-default",
+        "system_prompt": system_prompt,
+        "skills_enabled": enabled_skills,
+        "onboarding_profile_count": len(p),
+    }
+
 
 
 @app.post("/api/interview")
@@ -329,7 +460,7 @@ async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: 
     t0 = time.monotonic()
     try:
         t = await c.post(
-            f"{LITELLM_URL}/v1/audio/transcriptions",
+            f"{_base_v1()}/audio/transcriptions",
             headers={"Authorization": f"Bearer {LITELLM_KEY}"},
             data={"model": STT_MODEL},
             files={"file": (name, data, ctype)},

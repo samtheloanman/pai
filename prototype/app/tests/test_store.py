@@ -66,3 +66,25 @@ def test_failed_migration_rolls_back_and_retries(path, monkeypatch):
     monkeypatch.setattr(store, "MIGRATIONS", [*store.MIGRATIONS[:-1], good])
     with closing(store.connect(path)) as con:
         assert con.execute("pragma user_version").fetchone()[0] == base + 1
+
+
+def test_v5_upgrades_to_v6_unified_tables(path):
+    # simulate a v5 database with profile rows
+    with closing(sqlite3.connect(path)) as old:
+        for sql in store.MIGRATIONS[:5]:
+            old.executescript(sql)
+        old.execute("pragma user_version = 5")
+        old.execute("insert into profile (key, value) values ('name', 'Alice')")
+        old.execute("insert into profile (key, value) values ('off_limits', 'No crypto')")
+        old.commit()
+    with closing(store.connect(path)) as con:
+        assert con.execute("pragma user_version").fetchone()[0] == store.SCHEMA_VERSION
+        assert store.SCHEMA_VERSION >= 6
+        tables = {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
+        assert {"onboarding_profile", "agent_personas", "skills_and_tools", "mobile_voice_nodes", "connections_ingress"}.issubset(tables)
+        # verify backfill
+        row = con.execute("select value, category from onboarding_profile where key = 'name'").fetchone()
+        assert row == ("Alice", "identity")
+        row_limit = con.execute("select value, category from onboarding_profile where key = 'off_limits'").fetchone()
+        assert row_limit == ("No crypto", "boundary")
+
