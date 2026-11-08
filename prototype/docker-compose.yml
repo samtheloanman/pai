@@ -1,0 +1,47 @@
+# PAI prototype. Ports bind to 127.0.0.1 only; reach a cloud VM through Tailscale or an SSH tunnel.
+#   local mode (default):  docker compose --profile local up -d
+#   OpenRouter setup mode: LITELLM_CONFIG=litellm.openrouter.yaml docker compose up -d
+services:
+  llm:
+    profiles: [local]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    # -c is shared across --parallel slots: 16384 gives each of the 2 slots 8192 (chat + routing decision)
+    command: ["-hf", "${MODEL_HF:-unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M}", "--host", "0.0.0.0", "--port", "8080", "-c", "${CTX:-16384}", "--jinja", "--parallel", "2"]
+    volumes: [models:/root/.cache/huggingface]  # llama.cpp -hf downloads land here
+    restart: unless-stopped
+
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    volumes: [voice:/home/ubuntu/.cache/huggingface/hub]
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    # cloud keys + generated config come from the app via the shared volume; falls back to /config.yaml
+    entrypoint: ["sh", "-c", "set -a; [ -f /shared/litellm.env ] && . /shared/litellm.env; set +a; C=/config.yaml; [ -f /shared/litellm.generated.yaml ] && C=/shared/litellm.generated.yaml; exec litellm --config \"$${LITELLM_CONFIG_PATH:-$$C}\" --port 4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+    volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro", "shared:/shared:ro"]
+    restart: unless-stopped
+
+  app:
+    build: {context: ., dockerfile: app/Dockerfile}
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      SPEACHES_URL: http://speaches:8000
+      PAI_VAULT_KEY_FILE: /run/secrets/vault_key  # the key arrives as a file, not in the container's environment
+      AUDIT_CONTENT: ${AUDIT_CONTENT:-0}
+    secrets: [vault_key]
+    volumes: [data:/data, shared:/shared]
+    ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
+    depends_on: [litellm, speaches]
+    restart: unless-stopped
+
+# Read from the PAI_VAULT_KEY of the shell that runs compose (scripts/pai-up fills it from the macOS Keychain) or .env.
+secrets:
+  vault_key: {environment: PAI_VAULT_KEY}
+
+volumes: {models: {}, voice: {}, data: {}, shared: {}}

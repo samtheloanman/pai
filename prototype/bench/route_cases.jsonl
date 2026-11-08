@@ -1,0 +1,42 @@
+{"text": "Remember that my accountant is Dana Cho", "route": "remember"}
+{"text": "remember: the garage code is 4471", "route": "remember"}
+{"text": "Remember that I prefer window seats", "route": "remember"}
+{"text": "Remember my daughter's recital is on the 14th", "route": "remember"}
+{"text": "remember that Sam's birthday is in March", "route": "remember"}
+{"text": "Remember I'm allergic to penicillin", "route": "remember"}
+{"text": "What did I tell you about my accountant", "route": "memory_query"}
+{"text": "Do you remember the garage code", "route": "memory_query"}
+{"text": "What do I prefer when I fly", "route": "memory_query"}
+{"text": "Who is Dana and what does she do for me", "route": "memory_query"}
+{"text": "What did I say about my daughter's recital", "route": "memory_query"}
+{"text": "What do you know about my allergies", "route": "memory_query"}
+{"text": "Anything planned for tomorrow evening", "route": "calendar"}
+{"text": "Am I free Thursday afternoon", "route": "calendar"}
+{"text": "How long until my next appointment", "route": "calendar"}
+{"text": "What does my week look like", "route": "calendar"}
+{"text": "Find a slot for a 30 minute call with Sam next week", "route": "calendar"}
+{"text": "Do I have anything on Friday morning", "route": "calendar"}
+{"text": "Has my accountant written to me lately", "route": "email"}
+{"text": "Give me a rundown of the messages I haven't read", "route": "email"}
+{"text": "Has the landlord got back to me", "route": "email"}
+{"text": "Look in my inbox for the Acme bill", "route": "email"}
+{"text": "What emails came in overnight", "route": "email"}
+{"text": "Is there an email about the flight change", "route": "email"}
+{"text": "Email Sam that I'll be late", "route": "action"}
+{"text": "Book a table for four on Friday at 7", "route": "action"}
+{"text": "Call off the 3pm meeting", "route": "action"}
+{"text": "Forget memory 4", "route": "action"}
+{"text": "Delete memory 12", "route": "action"}
+{"text": "Pay the electric bill from my checking account", "route": "action"}
+{"text": "Hi, how are you", "route": "chat"}
+{"text": "Explain what a mortgage escrow account is", "route": "chat"}
+{"text": "Give me three ideas for a team offsite", "route": "chat"}
+{"text": "Write a polite two line thank you note", "route": "chat"}
+{"text": "What's the difference between a Roth and a traditional IRA", "route": "chat"}
+{"text": "Help me think through whether to hire a contractor", "route": "chat"}
+{"text": "Remember that the wifi password is on the fridge", "route": "remember"}
+{"text": "What did I save about the wifi", "route": "memory_query"}
+{"text": "Is my Monday morning clear", "route": "calendar"}
+{"text": "Did the bank send me anything today", "route": "email"}
+{"text": "Cancel my dentist appointment", "route": "action"}
+{"text": "Tell me a short joke about spreadsheets", "route": "chat"}

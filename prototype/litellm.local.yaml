@@ -1,0 +1,28 @@
+# Default: everything stays on the box.
+model_list:
+  - model_name: pai-chat
+    litellm_params:
+      model: openai/local
+      api_base: http://llm:8080/v1
+      api_key: none
+  - model_name: pai-decide
+    litellm_params:
+      model: openai/local
+      api_base: http://llm:8080/v1
+      api_key: none
+  - model_name: pai-stt
+    litellm_params:
+      model: openai/Systran/faster-whisper-small
+      api_base: http://speaches:8000/v1
+      api_key: none
+    model_info:
+      mode: audio_transcription
+  - model_name: pai-tts
+    litellm_params:
+      model: openai/speaches-ai/Kokoro-82M-v1.0-ONNX
+      api_base: http://speaches:8000/v1
+      api_key: none
+    model_info:
+      mode: audio_speech
+litellm_settings:
+  telemetry: false

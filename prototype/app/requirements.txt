@@ -1,0 +1,9 @@
+fastapi==0.115.12
+uvicorn==0.34.2
+httpx==0.28.1
+python-multipart==0.0.20
+pytest==8.3.4
+sqlcipher3==0.6.4
+sqlite-vec==0.1.9
+fastembed==0.9.1
+pyyaml==6.0.3

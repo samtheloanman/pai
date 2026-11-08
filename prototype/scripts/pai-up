@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs `docker compose` with the vault key taken from the macOS Keychain, so it needs no place in .env.
+#   scripts/pai-up up -d --build          any docker compose arguments
+#   scripts/pai-up new-key                make a fresh key in the Keychain (refuses if one exists)
+#   <key on stdin> | scripts/pai-up import-key   store an existing key (e.g. the one you used so far)
+# shortcut: macOS only and the key is briefly on the `security` command line; the PAI OS image uses a TPM-sealed
+# systemd credential instead (the app reads it from $CREDENTIALS_DIRECTORY/vault-key).
+set -eu
+cd "$(dirname "$0")/.."
+SVC=pai-vault-key
+have() { security find-generic-password -s "$SVC" >/dev/null 2>&1; }
+store() { security add-generic-password -U -a "$USER" -s "$SVC" -w "$1" >/dev/null; }
+case "${1:-}" in
+  new-key)
+    have && { echo "A vault key is already in the Keychain; refusing to replace it (that would lock the vault)." >&2; exit 1; }
+    store "$(openssl rand -hex 32)"; echo "Vault key created in the Keychain ($SVC)." ;;
+  import-key)
+    IFS= read -r k; [ -n "$k" ] || { echo "empty key on stdin" >&2; exit 1; }
+    have && { echo "A vault key is already in the Keychain; refusing to replace it." >&2; exit 1; }
+    store "$k"; echo "Vault key imported to the Keychain ($SVC). You can now remove PAI_VAULT_KEY from .env." ;;
+  *)
+    have || { echo "No vault key in the Keychain. Run: scripts/pai-up new-key  (or import-key for an existing vault)." >&2; exit 1; }
+    PAI_VAULT_KEY="$(security find-generic-password -s "$SVC" -w)" exec docker compose "$@" ;;
+esac

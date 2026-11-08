@@ -83,3 +83,11 @@ Remaining:
 3. Write `pai-bench` and the Ansible/OS skeleton while units ship.
 4. Landing page + product pages (numbers stay "TBD" until bench).
 5. Units arrive → bench → set prices → publish hardware SKUs → deploy to Vercel.
+
+---
+
+## Track 5 — Decentralized Encrypted Cloud & Device Sync (Future Feature)
+
+- **Local Device Mesh**: Syncthing running over Tailscale/WireGuard for zero-cloud file sync between owner devices and PAI box.
+- **Encrypted backup**: client-side encrypted offsite backup (restic or Rclone Crypt) to storage the owner chooses; the box encrypts before upload.
+- **Status**: queued for post-MVP; not designed or tested.

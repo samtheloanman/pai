@@ -1,6 +1,8 @@
 # PAI — Product Requirements (MVP)
 
-Version 0.1 · 1 Nov 2026 · Owner: Sam · Status: draft for review
+Version 0.2 · 1 Nov 2026 · Owner: Sam · Status: draft for review
+
+v0.2 adds: base OS choice, model providers and routing, private cloud routing, encrypted vault, audit trail, learning, tool sandbox, LAN awareness, database-safe updates. Items marked (U) are unconfirmed and must be checked on real hardware or against official docs.
 
 ## 1. Summary
 
@@ -47,15 +49,18 @@ Non-goals (MVP)
 
 | ID | Requirement | Priority |
 |---|---|---|
-| OS-1 | Headless Linux image for x86-64; immutable root with A/B partitions and automatic rollback on failed boot | Must |
+| OS-1 | Headless image built with bootc on a **Fedora** base (not CentOS Stream: its kernel is too old for new AMD chips); atomic updates with automatic rollback when post-boot health checks fail (greenboot). Final choice after the hardware test in §6.2; NixOS is the fallback | Must |
 | OS-2 | Signed update images; box refuses unsigned images | Must |
 | OS-3 | llama.cpp (Vulkan on AMD iGPU) behind llama-swap; OpenAI-compatible API bound to localhost | Must |
-| OS-4 | Bundled models chosen per memory size: 16 GB → 7-14B and gpt-oss-20b; 32 GB → 20-30B MoE (e.g. Qwen3-30B-A3B). License check per model card before bundling | Must |
+| OS-4 | A 4B model (~2.5 GB) ships inside the image so setup and chat work offline on first boot. Larger models chosen per memory size: 16 GB → 7-14B and gpt-oss-20b; 32 GB → 20-30B MoE (e.g. Qwen3-30B-A3B). License check per model card before bundling | Must |
 | OS-5 | Nothing listens on public interfaces; services bind to localhost and the private overlay network only | Must |
 | OS-6 | Remote access through Tailscale client; default = owner's own Tailscale account; Headscale option designed in, shipped later | Must (default), Later (Headscale) |
 | OS-7 | Telemetry off by default; no outbound calls except updates and channels the owner enables | Must |
 | OS-8 | Install path for PAI OS on own hardware: USB image, ≥16 GB RAM, wired network | Must |
 | OS-9 | Ansible playbook that provisions a dev box to the same state as the image | Should |
+| OS-10 | Database-safe updates: migrations stay readable by the previous app version for one release (add, never rename or drop); the app refuses to start on a newer schema it does not know, with a clear message; a consistent SQLite backup is taken before every OS update and restored only as a last resort | Must |
+| OS-11 | No desktop or GUI packages on consumer images; Omarchy only as an optional Dev image | Must |
+| OS-12 | Factory reset wipes owner state (vault, audit log, keys, accounts) and returns to first boot; built by us, since bootc has no built-in state wipe (U) | Must |
 
 ### 5.2 PAI app and agent
 
@@ -79,6 +84,74 @@ Non-goals (MVP)
 - Pull power during an update → box boots the previous version.
 - `ss -tlnp` on the box shows no service on a public interface.
 - Telegram chat works end to end; the app shows its privacy level C note.
+
+### 5.4 Model providers and routing
+
+| ID | Requirement | Priority |
+|---|---|---|
+| ROUTE-1 | LiteLLM is the single model router for the app, voice and agents | Must |
+| ROUTE-2 | Built-in engine: llama.cpp. Optional external backends: Ollama, LM Studio (owner-installed; LM Studio is closed-source and is never bundled) | Must / Should |
+| ROUTE-3 | Cloud providers OpenRouter, Hugging Face and NVIDIA are available only with the owner's own key, stored encrypted; **no cloud provider by default**; no shared PAI keys in the image | Must |
+| ROUTE-4 | Request routing in tiers: (1) fixed rules, (2) small local embedding matcher (e.g. all-MiniLM-L6-v2, license to confirm), (3) the already-loaded main model with a structured decision prompt in its own server slot, only for unclear requests | Must |
+| ROUTE-5 | Any send, delete, spend or system change requires the owner's confirm regardless of what any model decides | Must |
+| ROUTE-6 | Routing accuracy and added latency measured in pai-bench on a labelled request set before targets are published | Must |
+| ROUTE-7 | Multi-box request distribution with NVIDIA Personal AI Router (PAIR) | Later |
+| ROUTE-8 | "Big model, slow mode": larger MoE models read from the NVMe SSD for background jobs only, never chat or voice; speeds measured in pai-bench before any claim | Later |
+
+### 5.5 Private cloud routing
+
+| ID | Requirement | Priority |
+|---|---|---|
+| PRIV-1 | Cloud use is opt-in per owner and visible per request | Must |
+| PRIV-2 | Before any cloud call, a local detector (Presidio via LiteLLM's guardrail, or similar) masks names, emails and similar with reversible placeholders and restores them in the reply | Should |
+| PRIV-3 | Secrets, financial identifiers and the owner's off-limits topics block cloud use outright | Must |
+| PRIV-4 | Every outbound call is logged with provider, size and masked-field count (see AUD) | Must |
+| PRIV-5 | Free cloud tiers are assumed to log prompts; only masked or non-sensitive text goes there | Must |
+
+### 5.6 Encrypted vault
+
+| ID | Requirement | Priority |
+|---|---|---|
+| VAULT-1 | One SQLite vault file encrypted with SQLCipher, holding facts, memories, full-text index (FTS5) and vectors (sqlite-vec); hybrid search | Must |
+| VAULT-2 | Full-disk encryption (LUKS); vault key sealed to the box's TPM with an optional owner PIN (TPM on Starter candidates U) | Must |
+| VAULT-3 | Passwords and card numbers live in a separate vault excluded from assistant search by default | Must |
+| VAULT-4 | Move vectors to LanceDB if a vault outgrows sqlite-vec; threshold set by pai-bench | Later |
+| VAULT-5 | Backups encrypted on the box before upload (restic) to storage the owner chooses | Should |
+
+### 5.7 Audit trail
+
+| ID | Requirement | Priority |
+|---|---|---|
+| AUD-1 | Every model call (via a LiteLLM callback), routing decision, agent action, confirm, system change, outbound call, memory change and training run writes one audit entry through a single function | Must |
+| AUD-2 | Entries store metadata only by default; full prompt and reply content is an owner opt-in with its own retention | Must |
+| AUD-3 | Append-only, hash-chained entries in a separate SQLCipher file; a verifier reports the first broken entry | Must |
+| AUD-4 | Activity page: what PAI did, what left the box, what asked for confirmation; filter and export | Should |
+| AUD-5 | Field names follow OpenTelemetry conventions so logs can be exported to Langfuse or similar | Should |
+
+### 5.8 Learning from the owner
+
+| ID | Requirement | Priority |
+|---|---|---|
+| LEARN-1 | Memory first: facts and preferences learned instantly, visible and deletable on the Memory page | Must |
+| LEARN-2 | Owner-approved updates to the rules page from corrections (playbook style) | Should |
+| LEARN-3 | Prompt tuning of the decision step from confirm/reject history (DSPy-style), no GPU needed | Later |
+| LEARN-4 | LoRA training (Soup, Unsloth or TRL) weekly on a GPU machine, off by default, promoted only if it beats the current adapter on a held-out and regression set, with one-switch rollback; deleted memories are excluded from the next run | Later |
+
+### 5.9 Tool sandbox
+
+| ID | Requirement | Priority |
+|---|---|---|
+| TOOL-1 | Generated or third-party tools run in throwaway, unprivileged Podman containers with a read-only filesystem | Must |
+| TOOL-2 | Tools have no access to the vault, audit log or keys; login tokens come from a separate token keeper | Must |
+| TOOL-3 | Network access only to destinations the tool declares | Must |
+| TOOL-4 | Automating a third-party site requires a per-service policy check against its terms; official APIs and MCP servers first | Must |
+
+### 5.10 Home network awareness
+
+| ID | Requirement | Priority |
+|---|---|---|
+| LAN-1 | Passive new-device alerts (ARP/NDP listener); no active network scans | Should |
+| LAN-2 | PAI does not intercept other devices' DNS or traffic in MVP: that only works if PAI is the home router, which is an open decision | Must |
 
 ## 6. MVP scope — hardware
 
@@ -133,10 +206,16 @@ Memory prices roughly doubled in 2026; parts-cost break-even for a 32 GB box is 
 | Support load | Immutable OS, rollback, PAI Care |
 | Model license changes | License check per model card before bundling |
 | Exposed agent gateways (40k+ OpenClaw instances found exposed, Feb 2026) | OS-5; CI test that fails if any port binds 0.0.0.0 |
+| OS rolls back but the database already migrated | OS-10 |
+| Generated tools damage data or leak keys | TOOL-1..TOOL-3 |
+| Cloud provider sees private data | ROUTE-3, PRIV-1..PRIV-5 |
+| Routing call slows simple requests | ROUTE-4 tiers, ROUTE-6 measurement |
 
 ## 11. Open decisions (Sam)
 - Pricing strategy for hardware (software-first vs repriced hardware).
 - Test-unit spend and RFQ sends.
-- OS base: bootc/Fedora CoreOS-style vs Ubuntu Core (decide by prototyping).
+- OS base: Fedora bootc chosen, pending a test on real Starter and Pro hardware (graphics acceleration, Wi-Fi, rollback after a deliberately broken update, factory reset).
+- Whether PAI ever becomes the home router (needed for any network-wide protection).
+- NVMe SSD choice for big-model mode (needs a sustained-read test).
 - Voice layer later: OpenVoiceOS vs Home Assistant Wyoming (hands-on test first).
 - Launch languages.
