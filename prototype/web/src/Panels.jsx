@@ -138,7 +138,8 @@ export function Setup({ onDone, onStatusChange }) {
     setErr('')
     try {
       await api('/api/rules/draft', { method: 'POST' })
-      await api('/api/onboarding/compile', { method: 'POST' })
+      // compile failure must not fall through to the fallback and overwrite drafted rules
+      await api('/api/onboarding/compile', { method: 'POST' }).catch((ce) => setErr(ce.message))
       await load()
       onDone()
     } catch (e) {
