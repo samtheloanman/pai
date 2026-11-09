@@ -2,6 +2,6 @@ name = "pai-inbox"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-[vars]
-# Must be a verified Email Routing destination address on the Cloudflare account.
-FORWARD_TO = "sam@c-mtg.com"
+# FORWARD_TO (maintainer inbox) is kept out of the public repo:
+#   npx wrangler secret put FORWARD_TO
+# It must be a verified Email Routing destination address.
