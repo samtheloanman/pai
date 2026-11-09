@@ -1,11 +1,11 @@
 # Agent workflows
 
-These files tell an AI agent how to handle one type of request that arrives at `agents@pai.example`. Each one is self-contained: you can paste it, or email it, to any agent (Claude Code, Codex, Gemini CLI, Hermes) together with the request.
+These files tell an AI agent how to handle one type of request that arrives at `agents@freedomos.org`. Each one is self-contained: you can paste it, or email it, to any agent (Claude Code, Codex, Gemini CLI, Hermes) together with the request.
 
 ## How a request flows
 
 ```
-sender ──email──▶ agents@pai.example
+sender ──email──▶ agents@freedomos.org
                     │  Cloudflare Email Routing → pai-inbox Worker (infra/email)
                     │  reads the [tag] in the subject, adds X-PAI-Request-Type
                     ▼

@@ -1,6 +1,6 @@
 # Runbook: project email routing
 
-Sets up the project addresses on Cloudflare Email Routing. Not live yet: it waits for the PAI domain.
+Sets up the project addresses on Cloudflare Email Routing. Live on `freedomos.org` (2026-11-09). `list@` goes live once the Google Group address is verified.
 
 | Address | Goes to | How |
 |---|---|---|
@@ -25,7 +25,7 @@ Sets up the project addresses on Cloudflare Email Routing. Not live yet: it wait
    - `security@` → *Send to a Worker* → `pai-inbox`
    - `list@` → *Send to an email* → `pai-dev@googlegroups.com`
    - Catch-all → *Drop*
-6. **Replace `pai.example`** with the real domain in `CONTRIBUTING.md`, `SECURITY.md` and `docs/agent-workflows/`.
+6. **Replace `freedomos.org`** with the real domain in `CONTRIBUTING.md`, `SECURITY.md` and `docs/agent-workflows/`.
 
 ## Verify
 - Send `[install] test` to `agents@<domain>`. It arrives at `<maintainer-inbox>`; the raw headers show `X-PAI-Request-Type: install`.

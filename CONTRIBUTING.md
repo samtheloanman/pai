@@ -2,14 +2,14 @@
 
 Thanks for helping. There are three ways in: the mailing list, the agent request inbox, and GitHub. Pick whichever suits you.
 
-> Addresses below use `pai.example` until the project domain is registered. Replace it everywhere when it is live.
+> Addresses below use `freedomos.org` until the project domain is registered. Replace it everywhere when it is live.
 
 ## 1. Mailing list (discussion)
 
 The list is the place for questions, design talk, proposals and release notes. Plain text, old-school, archived.
 
 - **Join:** send any email to `pai-dev+subscribe@googlegroups.com`, or open the group page and click *Join*.
-- **Post:** `pai-dev@googlegroups.com` (alias: `list@pai.example`).
+- **Post:** `pai-dev@googlegroups.com` (alias: `list@freedomos.org`).
 - **Archive:** the Google Group web page.
 
 Etiquette:
@@ -19,7 +19,7 @@ Etiquette:
 
 ## 2. Agent request inbox (get something done)
 
-Email **`agents@pai.example`** to file a request. An agent triages it using the matching workflow in [`docs/agent-workflows/`](docs/agent-workflows/) and a maintainer is notified.
+Email **`agents@freedomos.org`** to file a request. An agent triages it using the matching workflow in [`docs/agent-workflows/`](docs/agent-workflows/) and a maintainer is notified.
 
 Put the request type in square brackets at the start of the subject:
 
@@ -33,12 +33,12 @@ Put the request type in square brackets at the start of the subject:
 
 No tag? The message is filed as `general` and a human reads it.
 
-**Security problems never go to the agent inbox or the list.** Email `security@pai.example`; see [SECURITY.md](SECURITY.md).
+**Security problems never go to the agent inbox or the list.** Email `security@freedomos.org`; see [SECURITY.md](SECURITY.md).
 
 Example:
 
 ```
-To: agents@pai.example
+To: agents@freedomos.org
 Subject: [install] llm container exits with code 137 on 16 GB Mac
 
 OS: macOS 15.2, Apple M2, 16 GB
