@@ -2,110 +2,139 @@
 
 > **Your AI. Your house.**
 
-PAI is a private, sovereign AI server for the home. It runs state-of-the-art open-weight language and voice models on a compact, silent appliance, learns about its owner through a first-boot interview, and provides natural assistance over web, voice, and existing chat applications without cloud reliance.
+PAI runs an AI assistant on your own computer: a local chat model, local speech-to-text and text-to-speech, an encrypted memory vault, an approval step for risky actions, and a tamper-evident activity log. Models and memory stay on the machine; cloud models are off unless you turn them on with your own key.
+
+This repository is the open-source PAI software. It is a working prototype: there is no login yet and the PAI OS image is not built.
 
 ---
 
-## System Architecture
+## How it works
 
 ```
-                                  ┌──────────────────────────────┐
-                                  │       Client Interfaces      │
-                                  │ (Web PWA / iOS / Voice / CLI)│
-                                  └──────────────┬───────────────┘
-                                                 │
-                                                 ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ PAI Appliance Base OS (bootc / Fedora CoreOS / ostree A/B Rollback)                    │
-│                                                                                        │
-│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
-│   │ PAI Application Server (Port 8088 - FastAPI + @assistant-ui/react)             │   │
-│   │                                                                                │   │
-│   │   ┌───────────────────┐    ┌────────────────────┐    ┌─────────────────────┐   │   │
-│   │   │  Setup Interview  │    │ Multi-Tier Router  │    │   Encrypted Vault   │   │   │
-│   │   │ (8-Question Flow) │    │(Rules / Embeddings)│    │(SQLCipher+Vec+FTS5) │   │   │
-│   │   └───────────────────┘    └─────────┬──────────┘    └─────────────────────┘   │   │
-│   │                                      │                                         │   │
-│   │   ┌───────────────────┐              │               ┌─────────────────────┐   │   │
-│   │   │  Confirm Gateway  │              │               │ Tamper-Evident Log  │   │   │
-│   │   │ (Approvals / TTL) │              │               │(Append-Only Ledger) │   │   │
-│   │   └───────────────────┘              │               └─────────────────────┘   │   │
-│   └──────────────────────────────────────┼─────────────────────────────────────────┘   │
-│                                          │                                             │
-│                                          ▼                                             │
-│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
-│   │ LiteLLM Model Gateway (Port 4000)                                              │   │
-│   │                                                                                │   │
-│   │   ┌───────────────────────┐                    ┌───────────────────────────┐   │   │
-│   │   │ Local llama.cpp:8080  │                    │ User-Keyed Cloud Fallback │   │   │
-│   │   │ (Qwen3-4B / 14B / 30B)│                    │ (OpenRouter/NVIDIA/HF)    │   │   │
-│   │   └───────────────────────┘                    └───────────────────────────┘   │   │
-│   └────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                        │
-│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
-│   │ Local Voice Engine (Port 8000 - faster-whisper + Kokoro TTS)                   │   │
-│   └────────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                        │
-│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
-│   │ App Replacement & LAN Guardian (Unprivileged Podman Sandboxes)                 │   │
-│   │ • REA & CLI-Anything   • Passive ARP Listener   • Unbound DNS Sinkhole         │   │
-│   └────────────────────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+ Browser (http://localhost:8088)  ·  voice  ·  CLI
+                    │
+                    ▼
+ ┌─────────────────────────────────────────────────────────┐
+ │ PAI app (FastAPI + React, port 8088)                    │
+ │  setup interview · router · encrypted vault (SQLCipher) │
+ │  approval gateway · append-only audit log               │
+ └───────────────┬─────────────────────────┬───────────────┘
+                 ▼                         ▼
+ ┌───────────────────────────┐   ┌─────────────────────────┐
+ │ LiteLLM gateway (4000)    │   │ Speaches voice (8000)   │
+ │  pai-chat / pai-decide    │   │  faster-whisper (STT)   │
+ └───────┬───────────────┬───┘   │  Kokoro (TTS)           │
+         ▼               ▼       └─────────────────────────┘
+  llama.cpp (8080)   optional cloud model
+  local GGUF model   (your key, off by default)
 ```
 
----
-
-## Quickstart (Zero-Config 1-Click Launch)
-
-Run one command to start PAI OS with local Ollama:
-```bash
-./run.sh
-```
-Or via Docker Compose directly:
-```bash
-docker compose up -d
-```
-
-### Open the Interface
-Navigate to [http://localhost:8088](http://localhost:8088) in your browser:
-1. **Setup Interview**: Complete the 8-question first-boot interview by voice or keyboard to personalize your assistant.
-2. **Constitutional Rules**: Review and confirm the auto-generated boundaries ("I will / I won't").
-3. **Compile & Activate**: Hit **Compile & Activate** to generate your sovereign companion persona (`pai-default`), auto-bind local tools, and enable encrypted memory persistence.
-4. **Chat & Voice**: Real-time conversation with local speech input/output, zero cloud leak guarantee.
-
----
-
-## Cinematic Launch Trailer
-
-Watch the *Her* OS1 setup sequence recreated for PAI OS:  
-[![PAI OS Marketing Trailer](https://img.youtube.com/vi/f9Hg1x-Ctlw/0.jpg)](https://www.youtube.com/watch?v=f9Hg1x-Ctlw)  
-*Video Reel: `pai-os-her-marketing-9x16.mp4` (50s vertical, 30fps, 44.1kHz stereo audio master).*
-
----
-
-## Store & Website
-Pre-order dedicated hardware appliances or read live deployment guides at [pai-store.vercel.app](https://pai-store.vercel.app).
-
-| Directory | What it contains |
+| Piece | What it does |
 |---|---|
-| [`INSTALL.md`](INSTALL.md) | Install the Docker prototype yourself or with your AI agent (includes copy-paste prompt) |
-| [`SPEC.md`](SPEC.md) | **Complete technical system specification** and subsystem documentation. |
-| [`PRD.md`](PRD.md) | Product requirements, personas, hardware targets, and scope boundaries. |
-| [`prototype/app/`](prototype/app/) | The PAI application core: FastAPI, React UI, SQLCipher vault, and routing tiers. |
-| [`os/`](os/) | `bootc` Containerfiles and systemd Quadlet provisioning configurations. |
-| [`bench/`](bench/) | `pai-bench`: Benchmark harness for token speeds, power draw, and acoustic noise. |
-| [`docs/`](docs/) | Architecture records, LLM council verdicts, and brand claims guidelines. |
+| `llm` | llama.cpp server running a local GGUF model from Hugging Face. |
+| `litellm` | One OpenAI-style API in front of every model. The app asks for `pai-chat`, `pai-decide`, `pai-stt`, `pai-tts`; LiteLLM maps them to real models. |
+| `speaches` | Local voice: faster-whisper for speech-to-text, Kokoro for text-to-speech. |
+| `app` | The PAI server and web UI: setup interview, memory vault, approvals, audit log. |
 
 ---
 
-## Hardware Lineup & Roadmap
+## Install
 
-- **PAI Starter ($899–$999)**: AMD Ryzen 8945HS mini PC, 16 GB DDR5, OCuLink expansion port.
-- **PAI Starter+ ($1,199)**: 32 GB dual-channel DDR5 for 20B–30B mixture-of-experts models.
-- **PAI Dock ($199 bare)**: OCuLink external GPU dock for desktop graphics cards.
-- **PAI Pro ($4,499)**: AMD Strix Halo APU with 128 GB unified memory for 70B+ frontier models.
+The full, step-by-step guide (also written so an AI coding agent can follow it) is **[INSTALL.md](INSTALL.md)**. Short version:
+
+```bash
+git clone https://github.com/samtheloanman/pai.git ~/pai
+cd ~/pai/prototype
+cp .env.example .env        # then create the vault key as INSTALL.md step 4 shows
+scripts/pai-up --profile local up -d --build
+```
+
+Open **http://localhost:8088** and complete the setup interview. Check health with:
+
+```bash
+curl -fsS http://127.0.0.1:8088/api/health
+```
+
+Requirements: macOS or Linux (Windows only inside WSL2, untested), Docker with Compose v2, about 15 GB free disk, and 16 GB RAM for the default model.
+
+**Quick demo instead:** `./run.sh` in the repo root starts a lighter stack on Ollama with `gemma3:4b`. It skips the vault-key setup in INSTALL.md, so use it only to try PAI out.
+
+Never run `docker compose down -v` or delete `~/.config/pai` unless you mean to destroy the vault: there is no recovery without the key.
 
 ---
 
-## Store & Website
-The commercial storefront and documentation portal live in `samtheloanman/pai-store` running Next.js + Payload CMS at [http://localhost:3031](http://localhost:3031).
+## Choosing a model
+
+Set the model in `prototype/.env` with `MODEL_HF` (a Hugging Face `repo:quant` that llama.cpp downloads on first start), then restart with `scripts/pai-up --profile local up -d`.
+
+| Your machine | Model | `MODEL_HF` | Download |
+|---|---|---|---|
+| 16 GB RAM (default) | Qwen3-4B Instruct | `unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M` | about 2.5 GB |
+| 32–64 GB RAM | Qwen3-30B-A3B Instruct (mixture of experts) | `unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M` | about 18 GB |
+
+Tips:
+- Give Docker Desktop enough memory: about 8 GB for the 4B model, at least 24 GB for 30B-A3B.
+- Context length defaults to 16,384 tokens; change it with `CTX` in `.env`. Larger context uses more memory.
+- Any instruct GGUF that llama.cpp supports will load. Prefer Q4_K_M quants; mixture-of-experts models give the best speed per GB of memory.
+- On a Mac, Docker has no GPU access, so models run on the CPU and are slower than native.
+- Measured speeds per machine go in [`bench/`](bench/) (`pai-bench`). We publish numbers only after measuring them.
+
+### Optional cloud model
+
+For setup or a machine too small for a local model, LiteLLM can route to a cloud model (OpenRouter by default, `OPENROUTER_MODEL` in `.env`). Your messages then leave the computer. It is off by default; type the provider key into the PAI app yourself, never into `.env` in plain text or into a chat with an agent. Free model IDs change often: check openrouter.ai/models.
+
+---
+
+## Day-to-day
+
+| Task | Command (run in `prototype/`; `scripts/pai-up` passes the vault key) |
+|---|---|
+| Status | `docker compose --profile local ps` |
+| Logs | `docker compose --profile local logs --tail 50 app llm litellm` |
+| Stop | `docker compose --profile local stop` |
+| Start | `scripts/pai-up --profile local up -d` |
+| Update | `git pull`, then `scripts/pai-up --profile local up -d --build` |
+
+The audit log stores metadata only. Set `AUDIT_CONTENT=1` in `.env` to also store prompts and replies (encrypted, but more sensitive).
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `port is already allocated` on 8088 | Another program uses it. Set `PAI_PORT=8089` in `.env` and use that port. |
+| `llm` container exits with code 137 | Out of memory. Raise Docker's memory or switch back to the 4B model. |
+| Health check never returns 200 | `docker compose --profile local logs --tail 60 app`. A "vault" error means a wrong or missing key; a LiteLLM error means check the `litellm` container. |
+| First answer is very slow | The model or voice models are still downloading: `docker compose --profile local logs --tail 20 llm speaches`. |
+| Slow on Apple Silicon | Expected in Docker (CPU only). Use the 4B model or run llama.cpp natively. |
+| `secrets` error on start | Docker Compose is too old. Upgrade Docker. |
+| Voice does not work | Check the `speaches` container is running and the browser has microphone permission for localhost. |
+
+Still stuck? Open an issue with the exact command, the error text, and the output of `docker compose --profile local ps`.
+
+---
+
+## Security notes
+
+- PAI has **no login yet**. Anyone who can reach port 8088 can read memories and confirm actions. It binds to `127.0.0.1` by default: keep it on this computer or a private network and never publish the port.
+- The vault key lives outside `.env` and outside the app container's environment. Lose the key and the vault cannot be opened.
+
+---
+
+## Repository map
+
+| Path | What it contains |
+|---|---|
+| [`INSTALL.md`](INSTALL.md) | Full install guide, with a copy-paste prompt for your AI agent. |
+| [`SPEC.md`](SPEC.md) | Technical specification of every subsystem. |
+| [`prototype/`](prototype/) | The PAI app (FastAPI, React UI, vault, router) and its Docker Compose stack. |
+| [`os/`](os/) | Early `bootc` and provisioning work for the future PAI OS image. |
+| [`bench/`](bench/) | `pai-bench`: token speed, power and noise measurements. |
+| [`docs/`](docs/) | Architecture notes and research. |
+
+---
+
+## License
+
+A license file has not been added yet.
