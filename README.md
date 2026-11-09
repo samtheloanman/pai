@@ -111,7 +111,7 @@ The audit log stores metadata only. Set `AUDIT_CONTENT=1` in `.env` to also stor
 | `secrets` error on start | Docker Compose is too old. Upgrade Docker. |
 | Voice does not work | Check the `speaches` container is running and the browser has microphone permission for localhost. |
 
-Still stuck? Open an issue with the exact command, the error text, and the output of `docker compose --profile local ps`.
+Still stuck? Email `agents@pai.example` with `[install]` in the subject (see [CONTRIBUTING.md](CONTRIBUTING.md)), or open an issue with the exact command, the error text, and the output of `docker compose --profile local ps`.
 
 ---
 
@@ -119,6 +119,14 @@ Still stuck? Open an issue with the exact command, the error text, and the outpu
 
 - PAI has **no login yet**. Anyone who can reach port 8088 can read memories and confirm actions. It binds to `127.0.0.1` by default: keep it on this computer or a private network and never publish the port.
 - The vault key lives outside `.env` and outside the app container's environment. Lose the key and the vault cannot be opened.
+
+---
+
+## Get involved
+
+- **Roadmap:** [ROADMAP.md](ROADMAP.md)
+- **Mailing list, agent request inbox, pull requests:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Security reports:** [SECURITY.md](SECURITY.md)
 
 ---
 
@@ -132,6 +140,8 @@ Still stuck? Open an issue with the exact command, the error text, and the outpu
 | [`os/`](os/) | Early `bootc` and provisioning work for the future PAI OS image. |
 | [`bench/`](bench/) | `pai-bench`: token speed, power and noise measurements. |
 | [`docs/`](docs/) | Architecture notes and research. |
+| [`docs/agent-workflows/`](docs/agent-workflows/) | How agents handle emailed requests, by type. |
+| [`infra/email/`](infra/email/) | Cloudflare Email Worker and runbook for the project addresses. |
 
 ---
 

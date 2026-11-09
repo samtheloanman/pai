@@ -1,0 +1,7 @@
+name = "pai-inbox"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Must be a verified Email Routing destination address on the Cloudflare account.
+FORWARD_TO = "sam@c-mtg.com"
