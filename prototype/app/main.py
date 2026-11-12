@@ -134,13 +134,29 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
     return out
 
 
+def _extract_json(text: str) -> dict:
+    s = text.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\s*```$", "", s)
+        s = s.strip()
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(s[start : end + 1])
+        raise
+
+
 async def decide(text: str) -> tuple[str, float]:
     """Tier-3 router: ask the decision model for {"route", "p"}. Raises on any bad answer; routing maps that to chat."""
     out = await llm([
         {"role": "system", "content": f'Classify the owner\'s request into exactly one route from {list(routing.ROUTES)}. Reply with JSON only: {{"route": "<route>", "p": <0..1>}}'},
         {"role": "user", "content": text[: routing.MAX_CHARS]},
     ], model=DECIDE_MODEL, temperature=0)
-    d = json.loads(out)
+    d = _extract_json(out)
     if d["route"] not in routing.ROUTES:
         raise ValueError(f"unknown route {d['route']!r}")
     return d["route"], min(1.0, max(0.0, float(d["p"])))
@@ -482,7 +498,7 @@ async def synthesize(c: httpx.AsyncClient, text: str):
     t0 = time.monotonic()
     try:
         s = await c.post(
-            f"{LITELLM_URL}/v1/audio/speech",
+            f"{_base_v1()}/audio/speech",
             headers=_auth_headers(),
             json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
         )
