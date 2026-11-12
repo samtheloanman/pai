@@ -147,4 +147,4 @@ Still stuck? Email `agents@pai.example` with `[install]` in the subject (see [CO
 
 ## License
 
-A license file has not been added yet.
+PAI OS is free and open source under the [GNU AGPL-3.0](LICENSE). If you run a modified version as a network service, you must offer its source to the people who use it. Paid support is optional: $59 a year.
