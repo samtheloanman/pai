@@ -8,17 +8,24 @@
 set -eu
 cd "$(dirname "$0")/.."
 SVC=pai-vault-key
-have() { security find-generic-password -s "$SVC" >/dev/null 2>&1; }
+have() { command -v security >/dev/null 2>&1 && security find-generic-password -s "$SVC" >/dev/null 2>&1; }
 store() { security add-generic-password -U -a "$USER" -s "$SVC" -w "$1" >/dev/null; }
 case "${1:-}" in
   new-key)
     have && { echo "A vault key is already in the Keychain; refusing to replace it (that would lock the vault)." >&2; exit 1; }
     store "$(openssl rand -hex 32)"; echo "Vault key created in the Keychain ($SVC)." ;;
   import-key)
-    IFS= read -r k; [ -n "$k" ] || { echo "empty key on stdin" >&2; exit 1; }
+    IFS= read -r k || [ -n "$k" ]; [ -n "$k" ] || { echo "empty key on stdin" >&2; exit 1; }
     have && { echo "A vault key is already in the Keychain; refusing to replace it." >&2; exit 1; }
     store "$k"; echo "Vault key imported to the Keychain ($SVC). You can now remove PAI_VAULT_KEY from .env." ;;
   *)
-    have || { echo "No vault key in the Keychain. Run: scripts/pai-up new-key  (or import-key for an existing vault)." >&2; exit 1; }
-    PAI_VAULT_KEY="$(security find-generic-password -s "$SVC" -w)" exec docker compose "$@" ;;
+    if have; then
+      PAI_VAULT_KEY="$(security find-generic-password -s "$SVC" -w)" exec docker compose "$@"
+    elif [ -n "${PAI_VAULT_KEY:-}" ]; then
+      exec docker compose "$@"
+    elif [ -f .env ] && grep -q '^PAI_VAULT_KEY=[^[:space:]]' .env; then
+      PAI_VAULT_KEY="$(grep '^PAI_VAULT_KEY=' .env | cut -d= -f2- | tr -d '[:space:]')" exec docker compose "$@"
+    else
+      echo "No vault key in Keychain, environment, or .env. Run: scripts/pai-up new-key  (or set PAI_VAULT_KEY)." >&2; exit 1;
+    fi ;;
 esac
