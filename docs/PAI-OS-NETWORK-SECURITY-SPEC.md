@@ -116,6 +116,32 @@ Whenever an interface (`eth0`, `wlan0`) transitions to `carrier` or acquires a D
 | **ARP Spoofing / Gateway MITM** | Inject kernel drop: `arptables -A INPUT --source-mac ! <MAC> -j DROP` or bring interface down | Hard Isolation | Logged to `audit.db` with attacker MAC address. |
 | **Captive Portal / TLS Hijack** | Block all unencrypted egress; restrict traffic strictly to Tailscale/WireGuard UDP 41641 | Mesh Tunnel Only | Prompt user: "Untrusted network feed. Use encrypted overlay only?" |
 | **Unauthorized Process Egress** | OpenSnitch/Tetragon blocks socket; triggers `actions.propose(kind='network_unblock')` | Process Isolated | Interactive prompt on PAI UI (:8088). |
+| **802.11 Deauth Flood / RF Jam** | Triggered by ESP32 Sentinel; locks BSSID and switches to wired/Tailscale link | Radio Isolated | Voice alert: "Deauthentication flood detected in local airspace." |
+| **BadUSB Keystroke Injection** | `usbguard` blocks unauthorized HID endpoint unless paired via button | USB Interface Blocked | High-priority security log in `audit.db`. |
+
+---
+
+### 4.3 Out-of-Band Hardware Sentinel (Hizmos & ESP32-S3 Architecture)
+
+To monitor 802.11 airspace without putting the primary Wi-Fi NIC into monitor mode (which interrupts active internet/voice sessions), PAI OS supports an optional **ESP32-S3 Hardware Sentinel** (inspired by [`Hiktron/Hizmos`](https://github.com/Hiktron/Hizmos)):
+
+1. **Airspace Sniffing Daemon**:
+   - An ESP32-S3 running dedicated promiscuous-mode firmware connects via USB (`/dev/ttyACM0` / `/dev/ttyUSB0`).
+   - Cycles channels 1–13 or locks onto the host AP's channel.
+   - Detects layer-2 wireless attacks:
+     - 802.11 Deauthentication / Disassociation frame floods (type 0, subtype 12).
+     - Beacon frame spoofing (identical SSID with deviating BSSID/OUI or sudden RSSI delta).
+     - BLE advertisement spam (Apple/Google fast-pair floods).
+2. **Serial Telemetry Protocol**:
+   - Telemetry emitted as compact JSON over 115200 baud UART:
+     ```json
+     {"event": "DEAUTH_SPIKE", "bssid": "aa:bb:cc:dd:ee:ff", "count_sec": 42, "rssi": -38}
+     {"event": "BEACON_ANOMALY", "ssid": "Home-Network", "rogue_bssid": "00:11:22:33:44:55", "rssi_delta": 22}
+     ```
+   - Ingested by `prototype/sentinel/airspace_monitor.py` into PAI OS event bus.
+3. **BadUSB Defense via `usbguard`**:
+   - Hizmos and Flipper Zero devices can emulate USB keyboards (BadUSB) to inject terminal payloads upon insertion.
+   - PAI OS enforces `usbguard` with a default-deny policy for new HID devices, requiring manual confirmation via physical button or authenticated mobile app.
 
 ---
 
@@ -124,12 +150,15 @@ Whenever an interface (`eth0`, `wlan0`) transitions to `carrier` or acquires a D
 1. **`prototype/sentinel/net_feed_guard.py`**:
    - Python daemon implementing Scapy/Socket-based Rogue DHCP listener, ARP validator, and canary TLS prober.
    - Executable by systemd (`pai-net-sentinel.service`).
-2. **`prototype/sentinel/rules.nft`**:
+2. **`prototype/sentinel/airspace_monitor.py`**:
+   - Serial telemetry consumer for ESP32-S3 (Hizmos-style) hardware sensor streaming layer-2 802.11 and BLE alerts.
+3. **`prototype/sentinel/rules.nft`**:
    - Fail-closed nftables ruleset enforcing default-deny egress on physical interfaces (`wlan0`, `eth0`), allowing only WireGuard/Tailscale encapsulation (`tailscale0`).
-3. **`prototype/app/pai/net_audit.py`**:
+4. **`prototype/app/pai/net_audit.py`**:
    - Integration with `audit.py` to record network feed validation receipts and telemetry stats into `audit.db`.
-4. **`os/systemd/pai-net-sentinel.service`**:
+5. **`os/systemd/pai-net-sentinel.service`**:
    - Systemd unit running as root with `CAP_NET_ADMIN` and `CAP_NET_RAW`.
+
 
 ---
 
@@ -145,3 +174,4 @@ Whenever an interface (`eth0`, `wlan0`) transitions to `carrier` or acquires a D
   Any new executable attempting outbound internet connection is trapped by eBPF/OpenSnitch and requires confirmation via `actions.py` before traffic is released.
 - **A5: Tamper-Evident Security Log**:
   Every network feed check, disconnect, and block is permanently hashed into `audit.db`.
+
