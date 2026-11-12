@@ -97,6 +97,10 @@ def _base_v1() -> str:
     return base if base.endswith("/v1") else f"{base}/v1"
 
 
+def _auth_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {LITELLM_KEY}"} if LITELLM_KEY else {}
+
+
 def audit_model(model: str, t0: float, ok: bool, **extra) -> None:
     audited("model_call", **{"gen_ai.request.model": model}, duration_ms=int((time.monotonic() - t0) * 1000), success=ok, **extra)
 
@@ -108,7 +112,7 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
         async with httpx.AsyncClient(timeout=300) as c:
             r = await c.post(
                 f"{_base_v1()}/chat/completions",
-                headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+                headers=_auth_headers(),
                 json={"model": model, "messages": messages, "temperature": temperature},
             )
     except httpx.HTTPError as e:
@@ -461,7 +465,7 @@ async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: 
     try:
         t = await c.post(
             f"{_base_v1()}/audio/transcriptions",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            headers=_auth_headers(),
             data={"model": STT_MODEL},
             files={"file": (name, data, ctype)},
         )
@@ -479,7 +483,7 @@ async def synthesize(c: httpx.AsyncClient, text: str):
     try:
         s = await c.post(
             f"{LITELLM_URL}/v1/audio/speech",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            headers=_auth_headers(),
             json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
         )
     except httpx.HTTPError as e:
