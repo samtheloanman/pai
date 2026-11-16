@@ -4,7 +4,7 @@ PAI holds personal memory, so we take reports seriously.
 
 ## Report a vulnerability
 
-Email **`security@pai.example`** (until the project domain is live, use the private *Report a vulnerability* button under the repository's Security tab). Do not open a public issue or post to the mailing list.
+Email **`security@freedomos.org`** (until the project domain is live, use the private *Report a vulnerability* button under the repository's Security tab). Do not open a public issue or post to the mailing list.
 
 Include: what you found, how to reproduce it, the version or commit, and the impact you expect. Redact personal data.
 

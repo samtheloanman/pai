@@ -111,7 +111,7 @@ The audit log stores metadata only. Set `AUDIT_CONTENT=1` in `.env` to also stor
 | `secrets` error on start | Docker Compose is too old. Upgrade Docker. |
 | Voice does not work | Check the `speaches` container is running and the browser has microphone permission for localhost. |
 
-Still stuck? Email `agents@pai.example` with `[install]` in the subject (see [CONTRIBUTING.md](CONTRIBUTING.md)), or open an issue with the exact command, the error text, and the output of `docker compose --profile local ps`.
+Still stuck? Email `agents@freedomos.org` with `[install]` in the subject (see [CONTRIBUTING.md](CONTRIBUTING.md)), or open an issue with the exact command, the error text, and the output of `docker compose --profile local ps`.
 
 ---
 
