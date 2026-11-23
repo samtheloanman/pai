@@ -14,8 +14,9 @@ Prototype only: image tags are not pinned yet, no login on the app, no A/B updat
 ## Run on a laptop (32-64 GB)
 
 ```bash
-cp .env.example .env            # set LITELLM_MASTER_KEY and PAI_VAULT_KEY; pick MODEL_HF
-docker compose --profile local up -d --build
+cp .env.example .env            # set LITELLM_MASTER_KEY; pick MODEL_HF (the vault key does not go here)
+scripts/pai-up new-key          # see "Vault key" below
+scripts/pai-up --profile local up -d --build
 open http://localhost:8088
 ```
 
@@ -26,27 +27,26 @@ open http://localhost:8088
 
 ## Vault key (required)
 
-`PAI_VAULT_KEY` encrypts the vault (memories, rules, profile, pending actions). The app will not start without it. Generate one and put it in `.env`:
-
-```bash
-openssl rand -hex 32
-```
+The vault key encrypts the vault (memories, rules, profile, pending actions). The app will not start without it. Create one with `scripts/pai-up new-key`; it is stored outside `.env` (see below).
 
 **If you lose this key you lose the vault; there is no recovery.** Back it up somewhere other than this machine.
 
 `AUDIT_CONTENT` (default `0`): the activity log stores metadata only (event kind, route, ids, and model name and duration for model calls). Set `AUDIT_CONTENT=1` to also store message and memory text in the log.
 
-## Vault key (macOS Keychain)
+## Where the vault key lives
 
-The app reads the vault key from a file (`PAI_VAULT_KEY_FILE`, a Compose secret), else a systemd credential `vault-key`, else the `PAI_VAULT_KEY` env var. To keep it out of `.env` and the container environment on a Mac:
+The app reads the vault key from a file (`PAI_VAULT_KEY_FILE`, a Compose secret), else a systemd credential `vault-key`, else the `PAI_VAULT_KEY` env var. `scripts/pai-up` keeps it out of `.env` and the container environment and hands it to Compose as the `vault_key` secret. Key store, best first (force one with `PAI_KEY_STORE=keychain|systemd|file`):
+
+- macOS: the Keychain (service `pai-vault-key`).
+- Linux: `~/.config/pai/vault-key.cred`, encrypted with `systemd-creds encrypt` when that works unprivileged; otherwise `~/.config/pai/vault-key`, mode 0600, in a mode-0700 directory. `PAI_CONFIG_DIR` moves both.
 
 ```bash
-scripts/pai-up new-key                        # new vault: key into the Keychain
-grep '^PAI_VAULT_KEY=' .env | cut -d= -f2- | scripts/pai-up import-key   # existing vault: move its key, then delete it from .env
+scripts/pai-up new-key                        # new vault: create and store a key
+scripts/pai-up migrate-key                    # existing vault: move PAI_VAULT_KEY out of .env, then drop the line
 scripts/pai-up --profile local up -d --build  # any docker compose arguments
 ```
 
-Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a key already in the Keychain.
+Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a stored key; `migrate-key` refuses if `.env` and the store hold different keys. A key still in `.env` keeps working but `pai-up` warns about it.
 
 ## Setup mode with OpenRouter (optional)
 

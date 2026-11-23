@@ -45,7 +45,8 @@ The full, step-by-step guide (also written so an AI coding agent can follow it) 
 ```bash
 git clone https://github.com/samtheloanman/pai.git ~/pai
 cd ~/pai/prototype
-cp .env.example .env        # then create the vault key as INSTALL.md step 4 shows
+cp .env.example .env        # LITELLM_MASTER_KEY, MODEL_HF; never the vault key
+scripts/pai-up new-key      # vault key: macOS Keychain, systemd-creds, or ~/.config/pai/vault-key (0600)
 scripts/pai-up --profile local up -d --build
 ```
 
@@ -57,7 +58,7 @@ curl -fsS http://127.0.0.1:8088/api/health
 
 Requirements: macOS or Linux (Windows only inside WSL2, untested), Docker with Compose v2, about 15 GB free disk, and 16 GB RAM for the default model.
 
-**Quick demo instead:** `./run.sh` in the repo root starts a lighter stack on Ollama with `gemma3:4b`. It skips the vault-key setup in INSTALL.md, so use it only to try PAI out.
+**One command instead:** `./run.sh` in the repo root runs the same stack (llama.cpp + LiteLLM + Speaches + app) through `prototype/scripts/install.sh`: it creates `prototype/.env`, stores a new vault key outside the repo, starts everything on `127.0.0.1` and checks health. The root `docker-compose.yml` only includes `prototype/docker-compose.yml`; there is no separate demo stack. Ollama is not part of the default install; it is only an optional external backend you can add as a provider.
 
 Never run `docker compose down -v` or delete `~/.config/pai` unless you mean to destroy the vault: there is no recovery without the key.
 
@@ -118,7 +119,7 @@ Still stuck? Email `agents@freedomos.org` with `[install]` in the subject (see [
 ## Security notes
 
 - PAI has **no login yet**. Anyone who can reach port 8088 can read memories and confirm actions. It binds to `127.0.0.1` by default: keep it on this computer or a private network and never publish the port.
-- The vault key lives outside `.env` and outside the app container's environment. Lose the key and the vault cannot be opened.
+- The vault key lives outside `.env` and outside the app container's environment: in the macOS Keychain, a `systemd-creds` credential, or `~/.config/pai/vault-key` (mode 0600), and reaches the app as a Compose secret. An old `PAI_VAULT_KEY` line in `.env` is moved out by `scripts/pai-up migrate-key`. Lose the key and the vault cannot be opened.
 
 ---
 
