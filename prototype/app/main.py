@@ -62,12 +62,30 @@ def rules() -> str:
     return row[0] if row else ""
 
 
+PERSONA_MAX_CHARS = 4000  # compiled persona text included in the local system prompt
+SKILLS_MAX = 20  # enabled skills listed in the local system prompt
+
+
+def compiled_persona() -> tuple[str, list[str]]:
+    """The persona and enabled skills written by /api/onboarding/compile; ('', []) before the first compile."""
+    with closing(db()) as con:
+        row = con.execute("select system_prompt from agent_personas where persona_id = 'pai-default' and active = 1").fetchone()
+        skills = [t for (t,) in con.execute(
+            "select title from skills_and_tools where enabled_by_onboarding = 1 order by skill_id limit ?", (SKILLS_MAX,))]
+    return (row[0][:PERSONA_MAX_CHARS] if row else ""), skills
+
+
 def system_prompt(query: str) -> str:
     p = profile()
     lines = [
         "You are PAI, a private assistant that runs on the owner's own hardware.",
         "Be brief and concrete. Never claim to have sent, deleted or bought anything; say what you would do and ask first.",
     ]
+    persona, skills = compiled_persona()
+    if persona:
+        lines.append("Compiled persona (from onboarding):\n" + persona)
+    if skills:
+        lines.append("Enabled local skills:\n" + "\n".join(f"- {t}" for t in skills))
     if p:
         lines.append("About the owner:\n" + "\n".join(f"- {k}: {v}" for k, v in p.items()))
     if r := rules():
