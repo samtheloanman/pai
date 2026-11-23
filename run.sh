@@ -1,23 +1,6 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-echo "===================================================="
-echo "        PAI OS — Sovereign Desktop AI Companion      "
-echo "===================================================="
-
-# Check docker
-if ! command -v docker &> /dev/null; then
-    echo "Error: Docker is required. Please install Docker first: https://docs.docker.com/get-docker/"
-    exit 1
-fi
-
-echo "==> Starting PAI OS + Local Ollama..."
-docker compose up -d
-
-echo "==> Pulling lightweight default model (gemma3:4b)..."
-docker compose exec -T ollama ollama pull gemma3:4b || true
-
-echo ""
-echo "✨ PAI OS is running!"
-echo "🌐 Open your browser: http://localhost:8088"
-echo ""
+#!/bin/sh
+# Quick start from the repo root: the same stack and installer as prototype/ (llama.cpp + LiteLLM + Speaches + app).
+# prototype/scripts/install.sh creates prototype/.env, stores the vault key outside the repo (macOS Keychain,
+# systemd-creds, or ~/.config/pai/vault-key with mode 0600), starts the stack on 127.0.0.1 and checks health.
+set -eu
+exec "$(cd "$(dirname "$0")" && pwd)/prototype/scripts/install.sh" "$@"
