@@ -44,27 +44,48 @@ def _delete_memory(payload: dict) -> Any:
     return main.forget(int(payload["memory_id"]))  # same path as DELETE /api/memories/{mid}, incl. its audit entry
 
 
-def _safe_path(target_path: str, base_dir: str | None = None) -> Path:
+# File tools only ever see DATA_DIR/files. DATA_DIR itself holds the encrypted vault (pai.db), the audit log
+# (audit.db), their SQLite side files and possibly key files, none of which a tool may list, read, write or delete.
+FILES_SUBDIR = "files"
+# Defence in depth inside the files dir: never touch anything that looks like a database, journal or secret.
+_PROTECTED_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal", "-wal", "-shm", "-journal", ".sqlite", ".sqlite3",
+                       ".key", ".pem", ".env")
+_PROTECTED_NAMES = {"pai.db", "audit.db", "vault-key", "litellm.env", ".env"}
+
+
+def files_root() -> Path:
     import main
-    root = Path(base_dir or main.DATA_DIR).resolve()
+    return (Path(main.DATA_DIR) / FILES_SUBDIR).resolve()
+
+
+def _protected(p: Path) -> bool:
+    n = p.name.lower()
+    return n in _PROTECTED_NAMES or n.endswith(_PROTECTED_SUFFIXES) or "secret" in n
+
+
+def _safe_path(target_path: str, base_dir: str | None = None) -> Path:
+    root = Path(base_dir).resolve() if base_dir else files_root()
     target = (root / target_path).resolve() if not os.path.isabs(target_path) else Path(target_path).resolve()
     try:
         target.relative_to(root)
     except ValueError:
-        raise ValueError(f"Path {target_path!r} escapes allowed directory {root}")
+        raise ValueError(f"Path {target_path!r} escapes allowed directory {root}") from None
+    if any(_protected(Path(part)) for part in target.relative_to(root).parts):
+        raise ValueError(f"Path {target_path!r} is protected")
     return target
 
 
 def list_local_files(directory: str | None = None) -> list[dict]:
     """Read-only local file indexer. Keeps all operations local with zero cloud egress."""
-    import main
-    root = _safe_path(directory) if directory else Path(main.DATA_DIR).resolve()
+    root = _safe_path(directory) if directory else files_root()
     if not root.exists():
         return []
     if not root.is_dir():
         raise ValueError(f"Path is not a directory: {directory}")
     out = []
     for entry in sorted(os.scandir(root), key=lambda e: e.name):
+        if _protected(Path(entry.name)):
+            continue
         try:
             st = entry.stat()
             out.append({
@@ -103,31 +124,37 @@ def list_local_mail(folder: str = "INBOX", limit: int = 20) -> list[dict]:
         for p in sorted(target_dir.glob("*"), key=lambda f: f.stat().st_mtime, reverse=True)[:limit]:
             if p.is_file():
                 messages.append({"id": p.name, "subject": p.stem, "folder": folder, "size": p.stat().st_size})
-        if messages:
-            return messages
-    return [{"id": "local-001", "subject": "Welcome to PAI Sovereign OS", "from": "hermes@local.pai", "folder": folder, "date": "2026-11-08"}]
+        return messages
+    return []  # no local maildir yet: nothing to show, and nothing is invented
 
 
 def propose_send_mail(to: str, subject: str, body: str) -> str:
-    """Outbound mail is a risky action: propose it for approval in the Rakazo Approvals gate."""
+    """Outbound mail is a risky action: propose it for the owner's approval on the Approvals page."""
     summary = f"Send email to {to}: {subject}"
     return propose("send", summary, {"executor": "send_mail", "to": to, "subject": subject, "body": body})
 
 
 def propose_file_write(filepath: str, content: str) -> str:
-    """Local file modification is gated by approval."""
+    """Local file modification is gated by approval. A path outside the files dir is refused before it is queued."""
+    _safe_path(filepath)
     summary = f"Write local file: {filepath}"
     return propose("system", summary, {"executor": "write_local_file", "filepath": filepath, "content": content})
 
 
 def propose_file_delete(filepath: str) -> str:
-    """Local file deletion is gated by approval."""
+    """Local file deletion is gated by approval. A path outside the files dir is refused before it is queued."""
+    _safe_path(filepath)
     summary = f"Delete local file: {filepath}"
     return propose("delete", summary, {"executor": "delete_local_file", "filepath": filepath})
 
 
+class NotConfigured(Exception):
+    """The connector this action needs is not set up, so nothing was done."""
+
+
 def _execute_send_mail(payload: dict) -> Any:
-    return {"sent": True, "to": payload["to"], "subject": payload["subject"]}
+    # No outbound mail connector exists yet (PRD APP-6). Fail honestly so the action is recorded as failed, not done.
+    raise NotConfigured("mail not configured")
 
 
 def _execute_write_local_file(payload: dict) -> Any:
@@ -140,8 +167,9 @@ def _execute_write_local_file(payload: dict) -> Any:
 
 def _execute_delete_local_file(payload: dict) -> Any:
     target = _safe_path(payload["filepath"])
-    if target.is_file():
-        target.unlink()
+    if not target.is_file():
+        raise FileNotFoundError(payload["filepath"])
+    target.unlink()
     return {"deleted": True, "path": str(target)}
 
 
@@ -210,6 +238,8 @@ def confirm(action_id: str, executor: Callable[[dict], Any] | None = None) -> di
         try:
             executor(payload)
             final, extra = "done", {}
+        except NotConfigured as e:
+            final, extra = "failed", {"error": str(e)}
         except Exception as e:
             final, extra = "failed", {"error": type(e).__name__}
         with con:

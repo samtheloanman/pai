@@ -166,10 +166,11 @@ def test_endpoints_return_500_when_audit_down(client, monkeypatch):
 def test_local_files_listing_and_read(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
-    test_file = tmp_path / "notes.txt"
+    (tmp_path / "files").mkdir()
+    test_file = tmp_path / "files" / "notes.txt"
     test_file.write_text("Local knowledge without cloud egress", encoding="utf-8")
-    
-    files = actions.list_local_files(str(tmp_path))
+
+    files = actions.list_local_files()
     assert len(files) == 1
     assert files[0]["name"] == "notes.txt"
     assert files[0]["size"] > 0
@@ -189,9 +190,8 @@ def test_local_files_path_traversal_blocked(client, tmp_path, monkeypatch):
 def test_local_mail_listing(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
-    # Default local mail
-    mail = actions.list_local_mail()
-    assert len(mail) == 1 and mail[0]["id"] == "local-001"
+    # No maildir yet: an empty inbox, never an invented message
+    assert actions.list_local_mail() == []
 
     # Maildir inbox mail
     inbox = tmp_path / "maildir" / "INBOX"
@@ -214,8 +214,13 @@ def test_propose_send_mail_gated_by_approval(client):
     assert "ops@local.pai" in target["summary"]
 
     res = actions.confirm(aid)
-    assert res["status"] == "done"
+    # no mail connector exists: the approved action is recorded as failed, never as sent
+    assert res == {"status": "failed", "error": "mail not configured"}
     assert "action_confirmed" in kinds()
+    import main
+    from contextlib import closing
+    with closing(main.db()) as con:
+        assert con.execute("select status, result from actions where id = ?", (aid,)).fetchone() == ("failed", "mail not configured")
 
 
 def test_propose_file_write_and_confirm(client, tmp_path, monkeypatch):
@@ -225,12 +230,12 @@ def test_propose_file_write_and_confirm(client, tmp_path, monkeypatch):
     content = '{"mode": "hermes_local"}'
 
     aid = actions.propose_file_write(target_rel, content)
-    assert not (tmp_path / target_rel).exists()
+    assert not (tmp_path / "files" / target_rel).exists()
 
     res = actions.confirm(aid)
     assert res["status"] == "done"
-    assert (tmp_path / target_rel).exists()
-    assert (tmp_path / target_rel).read_text(encoding="utf-8") == content
+    assert (tmp_path / "files" / target_rel).read_text(encoding="utf-8") == content
+    assert not (tmp_path / target_rel).exists()
 
 
 def test_tools_api_endpoints(client, tmp_path, monkeypatch):
@@ -258,15 +263,14 @@ def test_tools_api_endpoints(client, tmp_path, monkeypatch):
 
     # 4. Local mail endpoint
     mres = client.get("/api/tools/mail")
-    assert mres.status_code == 200
-    assert len(mres.json()["messages"]) >= 1
+    assert mres.status_code == 200 and mres.json()["messages"] == []
 
     # 5. Outbound mail proposal endpoint
     mail_prop = client.post("/api/tools/mail/send", json={"to": "dev@local.pai", "subject": "Local tool ping", "body": "Ping"})
     assert mail_prop.status_code == 200
     m_aid = mail_prop.json()["action_id"]
     m_conf = client.post(f"/api/actions/{m_aid}/confirm")
-    assert m_conf.status_code == 200 and m_conf.json()["status"] == "done"
+    assert m_conf.status_code == 200 and m_conf.json() == {"status": "failed", "error": "mail not configured"}
 
 
 def test_mail_folder_traversal_blocked(client, tmp_path, monkeypatch):
@@ -282,7 +286,8 @@ def test_mail_folder_traversal_blocked(client, tmp_path, monkeypatch):
 def test_list_files_not_a_directory_error(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
-    single_file = tmp_path / "hello.txt"
+    (tmp_path / "files").mkdir()
+    single_file = tmp_path / "files" / "hello.txt"
     single_file.write_text("world", encoding="utf-8")
 
     with pytest.raises(ValueError, match="Path is not a directory"):
@@ -295,7 +300,8 @@ def test_list_files_not_a_directory_error(client, tmp_path, monkeypatch):
 def test_hermes_system_prompt_wires_local_mail_and_files(tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
-    doc = tmp_path / "budget_2026.txt"
+    (tmp_path / "files").mkdir()
+    doc = tmp_path / "files" / "budget_2026.txt"
     doc.write_text("Confidential local numbers", encoding="utf-8")
 
     # When query mentions files
@@ -303,8 +309,57 @@ def test_hermes_system_prompt_wires_local_mail_and_files(tmp_path, monkeypatch):
     assert "Local files (read-only, no egress):" in prompt_files
     assert "budget_2026.txt" in prompt_files
 
-    # When query mentions mail
+    # When query mentions mail: no maildir means no inbox section and no invented message
+    assert "Local mail inbox" not in main.system_prompt("check my inbox for new emails")
+    inbox = tmp_path / "maildir" / "INBOX"
+    inbox.mkdir(parents=True)
+    (inbox / "Quarterly review.eml").write_text("Subject: Quarterly review", encoding="utf-8")
     prompt_mail = main.system_prompt("check my inbox for new emails")
     assert "Local mail inbox (read-only, no egress):" in prompt_mail
-    assert "Welcome to PAI Sovereign OS" in prompt_mail
+    assert "Quarterly review" in prompt_mail
 
+
+
+def test_file_tools_cannot_reach_vault_audit_or_keys(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    for n in ("pai.db", "pai.db-wal", "pai.db-shm", "audit.db", "audit.db-journal", "vault-key"):
+        (tmp_path / n).write_text("secret", encoding="utf-8")
+    files = tmp_path / "files"
+    files.mkdir()
+    (files / "ok.txt").write_text("fine", encoding="utf-8")
+    for n in ("copy.db", "x.db-wal", "id.key", "litellm.env", "my-secret.txt"):
+        (files / n).write_text("secret", encoding="utf-8")
+
+    # listing shows only the files dir, minus anything that looks like a database or a secret
+    assert [f["name"] for f in actions.list_local_files()] == ["ok.txt"]
+    assert actions.read_local_file("ok.txt") == "fine"
+    for bad in ("../pai.db", "../pai.db-wal", "../audit.db", "../vault-key", str(tmp_path / "pai.db"), ".."):
+        with pytest.raises(ValueError, match="escapes allowed directory"):
+            actions._safe_path(bad)
+    for bad in ("copy.db", "x.db-wal", "id.key", "litellm.env", "my-secret.txt", "sub/audit.db"):
+        with pytest.raises(ValueError, match="protected"):
+            actions._safe_path(bad)
+    with pytest.raises(ValueError):
+        actions.list_local_files("..")
+
+    # the API refuses too, and a proposed write or delete of the vault never gets queued
+    assert client.get("/api/tools/files/read", params={"filepath": "../pai.db"}).status_code == 400
+    assert client.get("/api/tools/files", params={"directory": ".."}).status_code == 400
+    assert client.post("/api/tools/files/write", json={"filepath": "../audit.db", "content": "x"}).status_code == 400
+    assert client.post("/api/tools/files/write", json={"filepath": "pai.db", "content": "x"}).status_code == 400
+    assert (tmp_path / "audit.db").read_text(encoding="utf-8") == "secret"
+
+
+def test_file_delete_executor_is_confined(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    (tmp_path / "audit.db").write_text("keep", encoding="utf-8")
+    with pytest.raises(ValueError):
+        actions._execute_delete_local_file({"filepath": "../audit.db"})
+    assert (tmp_path / "audit.db").exists()
+    (tmp_path / "files").mkdir()
+    (tmp_path / "files" / "old.txt").write_text("bye", encoding="utf-8")
+    assert actions._execute_delete_local_file({"filepath": "old.txt"})["deleted"] is True
+    with pytest.raises(FileNotFoundError):  # deleting nothing is not reported as a delete
+        actions._execute_delete_local_file({"filepath": "old.txt"})
