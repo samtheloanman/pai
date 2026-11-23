@@ -14,12 +14,12 @@ const PRESETS = {
   apps: [
     'Calendar, Mail (Himalaya/IMAP), Notes, Terminal, and Browser.',
     'Telegram, Signal, Local Docs (Seafile), and Git.',
-    'Email, Calendar, Tasks (Paperclip), and Voice.',
+    'Email, Calendar, Tasks, and Voice.',
   ],
   help: [
     'Triage inbound messages, draft replies, track tasks, and recall local notes.',
     'Summarize daily priorities, guard focus time, and organize project memory.',
-    'Run browser research in Rakazo sandbox and prepare executive briefings.',
+    'Run browser research in the PAI sandbox and prepare executive briefings.',
   ],
   off_limits: [
     'Never send emails, move money, or delete records without my explicit approval.',
@@ -46,7 +46,7 @@ const PRESETS = {
 const DEMO_PROFILE = {
   name: 'Sam',
   work: 'Founder and operator running local AI infrastructure and mortgage operations.',
-  apps: 'Calendar, Mail (Himalaya/IMAP), Notes, Paperclip, and Rakazo Browser.',
+  apps: 'Calendar, Mail (Himalaya/IMAP), Notes, Tasks, and a sandboxed browser.',
   help: 'Triage inbound messages, draft replies, track tasks, and recall local memory.',
   off_limits: 'Never send emails, delete data, or execute outward actions without explicit approval.',
   tone: 'Short and direct — lead with the result, no filler.',

@@ -12,7 +12,8 @@ export function Approvals({ actions, reload }) {
     setBusy(id); setMsg('')
     try {
       const r = await api(`/api/actions/${id}/${verb}`, { method: 'POST' })
-      setMsg(verb === 'reject' ? 'Rejected.' : WORDS[r.status] || 'Unknown request.')
+      const word = verb === 'reject' ? 'Rejected.' : WORDS[r.status] || 'Unknown request.'
+      setMsg(r.status === 'failed' && r.error ? `${word} (${r.error})` : word)
     } catch (e) { setMsg(e.message) }
     setBusy(null)
     reload()

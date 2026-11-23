@@ -9,8 +9,8 @@ import { Providers } from './Providers.jsx'
 const TABS = [
   ['setup', 'Setup'],
   ['chat', 'Hermes'],
-  ['rakazo', 'Rakazo'],
-  ['paperclip', 'Paperclip'],
+  ['gate', 'Action Gate'],
+  ['tasks', 'Tasks'],
   ['approvals', 'Approvals'],
   ['activity', 'Activity'],
   ['memory', 'Memory'],
@@ -18,13 +18,13 @@ const TABS = [
   ['providers', 'Runtime'],
 ]
 
-export function RakazoWorkspace({ actions, reload }) {
+export function ActionGateWorkspace({ actions, reload }) {
   const [simStatus, setSimStatus] = useState('')
   const [simBusy, setSimBusy] = useState(false)
 
   const triggerSimulatedAction = async (label, promptText) => {
     setSimBusy(true)
-    setSimStatus(`Staging "${label}" in Rakazo sandbox…`)
+    setSimStatus(`Staging "${label}" in the PAI sandbox…`)
     try {
       const mems = await api('/api/memories')
       let targetId = mems?.[0]?.id
@@ -51,11 +51,11 @@ export function RakazoWorkspace({ actions, reload }) {
   }
 
   return (
-    <div className="rakazo-workspace">
-      <div className="panel rakazo-hero">
+    <div className="gate-workspace">
+      <div className="panel gate-hero">
         <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h2>Rakazo Action Gate &amp; Audit Workspace</h2>
+            <h2>PAI Action Gate &amp; Audit Workspace</h2>
             <p className="muted" style={{ margin: '4px 0 0' }}>
               State-mutating operations, memory deletions, and outbound dispatches pause here for explicit confirmation before execution.
             </p>
@@ -79,11 +79,11 @@ export function RakazoWorkspace({ actions, reload }) {
         )}
       </div>
 
-      <div className="rakazo-split">
-        <div className="rakazo-col">
+      <div className="gate-split">
+        <div className="gate-col">
           <Approvals actions={actions} reload={reload} />
         </div>
-        <div className="rakazo-col">
+        <div className="gate-col">
           <Activity refreshKey={actions?.length || 0} />
         </div>
       </div>
@@ -91,7 +91,7 @@ export function RakazoWorkspace({ actions, reload }) {
   )
 }
 
-export function PaperclipBoard({ actions, onboarding, onNavigate }) {
+export function TaskBoard({ actions, onboarding, onNavigate }) {
   const [memories, setMemories] = useState([])
   const [rules, setRules] = useState({ text: '' })
   const [tasks, setTasks] = useState([
@@ -127,19 +127,19 @@ export function PaperclipBoard({ actions, onboarding, onNavigate }) {
   const pendingActions = actions || []
 
   return (
-    <div className="paperclip-shell">
+    <div className="taskboard-shell">
       <div className="panel" style={{ marginBottom: '14px' }}>
         <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2>Paperclip Task &amp; Governance Board</h2>
+            <h2>PAI Task &amp; Governance Board</h2>
             <p className="muted" style={{ margin: '4px 0 0' }}>
               Track local workstreams, review pending approvals ({pendingActions.length}), and inspect stored memories ({memories.length}).
             </p>
           </div>
           <form className="row" onSubmit={addTask}>
-            <label htmlFor="paperclip-new-task" className="sr-only">New task title</label>
+            <label htmlFor="taskboard-new-task" className="sr-only">New task title</label>
             <input
-              id="paperclip-new-task"
+              id="taskboard-new-task"
               placeholder="Add a task…"
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
@@ -150,7 +150,7 @@ export function PaperclipBoard({ actions, onboarding, onNavigate }) {
         </div>
       </div>
 
-      <div className="paperclip-board">
+      <div className="taskboard-board">
         <div className="kanban-col">
           <div className="kanban-head">
             <strong>Setup &amp; Rules</strong>
@@ -232,8 +232,8 @@ export function PaperclipBoard({ actions, onboarding, onNavigate }) {
               <p className="muted" style={{ fontSize: '12.5px', margin: '2px 0 6px' }}>
                 No high-risk actions are waiting for confirmation.
               </p>
-              <button type="button" className="btn btn-sm" onClick={() => onNavigate('rakazo')}>
-                Open Rakazo workspace
+              <button type="button" className="btn btn-sm" onClick={() => onNavigate('gate')}>
+                Open Action Gate
               </button>
             </div>
           ) : (
@@ -347,7 +347,7 @@ export function App() {
                   {onboarding.answered}/{onboarding.total}
                 </span>
               )}
-              {(id === 'approvals' || id === 'rakazo') && pending > 0 && (
+              {(id === 'approvals' || id === 'gate') && pending > 0 && (
                 <span className="badge" aria-label={`${pending} waiting`}>{pending}</span>
               )}
             </button>
@@ -371,8 +371,8 @@ export function App() {
 
       <main className="body" id="view" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === 'chat' && <Chat onNavigate={setTab} />}
-        {tab === 'rakazo' && <RakazoWorkspace actions={actions} reload={reload} />}
-        {tab === 'paperclip' && <PaperclipBoard actions={actions} onboarding={onboarding} onNavigate={setTab} />}
+        {tab === 'gate' && <ActionGateWorkspace actions={actions} reload={reload} />}
+        {tab === 'tasks' && <TaskBoard actions={actions} onboarding={onboarding} onNavigate={setTab} />}
         {tab === 'approvals' && <Approvals actions={actions} reload={reload} />}
         {tab === 'activity' && <Activity />}
         {tab === 'setup' && <Setup onDone={() => { reload(); setTab('chat') }} />}

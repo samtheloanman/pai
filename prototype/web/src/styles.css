@@ -640,14 +640,14 @@ textarea:user-invalid {
 .preset-group { display: flex; flex-direction: column; gap: 6px; }
 .preset-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* Rakazo Autonomous Workspace */
-.rakazo-workspace { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; }
-.rakazo-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.rakazo-col { min-width: 0; }
+/* Action Gate Workspace */
+.gate-workspace { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; overflow-y: auto; }
+.gate-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.gate-col { min-width: 0; }
 
-/* Paperclip Governance Kanban Board */
-.paperclip-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; }
-.paperclip-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+/* Task & Governance Board */
+.taskboard-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; }
+.taskboard-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .kanban-col {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -722,13 +722,13 @@ textarea:user-invalid {
 @media (max-width: 1040px) {
   .hermes-cockpit { grid-template-columns: 1fr; }
   .cockpit-rail:first-child, .cockpit-rail:last-child { border: 0; border-bottom: 1px solid var(--line); }
-  .paperclip-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .rakazo-split { grid-template-columns: 1fr; }
+  .taskboard-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gate-split { grid-template-columns: 1fr; }
   .wiz-interview-layout { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .top { flex-direction: column; align-items: stretch; }
-  .paperclip-board { grid-template-columns: 1fr; }
+  .taskboard-board { grid-template-columns: 1fr; }
   .wiz-steps { grid-template-columns: 1fr; }
   .starter-grid { grid-template-columns: 1fr; }
   .mem, .ledger-row { flex-wrap: wrap; }

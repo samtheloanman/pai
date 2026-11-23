@@ -93,12 +93,20 @@ def off_limits() -> list[str]:
     return [p.strip() for p in re.split(r"[,;\n]", row[0]) if p.strip()] if row else []
 
 
+# Largest text (message plus recent history) the hard-block check will clear for a cloud call. 10 history
+# messages of a few thousand characters each fit comfortably; anything bigger fails closed and stays local,
+# so an oversized payload can neither slow the check down nor slip past it.
+CLOUD_CHECK_MAX_CHARS = 32_000
+
+
 def cloud_decision(text: str, want_cloud: bool) -> tuple[str, str]:
     """(model, reason): reason says why a requested cloud call stayed local, '' when not applicable."""
     if not want_cloud:
         return "pai-chat", ""
     if not cloud_enabled() or not cloud_provider():
         return "pai-chat", "cloud is not set up"
+    if len(text) > CLOUD_CHECK_MAX_CHARS:
+        return "pai-chat", "conversation too long to check for cloud"
     ok, why = blocks.allowed_for_cloud(text, off_limits())
     return ("pai-cloud", "") if ok else ("pai-chat", why)
 
