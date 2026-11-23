@@ -1,4 +1,6 @@
 """SQLite storage with versioned, additive-only migrations (index = version - 1)."""
+import re
+
 import sqlcipher3 as sqlcipher
 import sqlite_vec
 
@@ -106,20 +108,59 @@ class VaultKeyError(Exception):
     """The vault is encrypted and the key is missing or wrong."""
 
 
+_RAW_KEY = re.compile(r"[0-9a-fA-F]{64}")
+
+
+def _probe(con) -> bool:
+    """True if the current key opens the file; False on SQLCipher's "not a database". Other errors propagate."""
+    try:
+        con.execute("select count(*) from sqlite_master").fetchone()
+        return True
+    except sqlcipher.DatabaseError as e:
+        # only SQLCipher's "not a database" means key problem; locks, I/O and other errors propagate unchanged
+        if isinstance(e, sqlcipher.OperationalError) or "file is not a database" not in str(e):
+            raise
+        return False
+
+
+def _unlock(path: str, key: str):
+    """Open `path` with `key`.
+
+    A 64-hex-char key (`openssl rand -hex 32`, what every installer generates) already has 256 bits of entropy, so it is
+    used as a raw SQLCipher key: no PBKDF2 on open (~0.4 s per connection otherwise, paid several times per chat turn).
+    Any other key is a passphrase and keeps SQLCipher's PBKDF2. A vault created before raw keys (hex key used as a
+    passphrase) is opened the old way once and rekeyed to raw in place.
+    """
+    raw = bool(_RAW_KEY.fullmatch(key))
+    attempts = ([f"x'{key}'"] if raw else []) + [key]  # raw first; passphrase form is the legacy/other-key path
+    for i, secret in enumerate(attempts):
+        con = sqlcipher.connect(path)
+        try:
+            # hex keys are validated above; passphrases are quoted. Never logged.
+            con.execute("pragma key = " + (f'"{secret}"' if secret.startswith("x'") else
+                                           "'" + secret.replace("'", "''") + "'"))
+            if _probe(con):
+                if raw and i == 1:
+                    con.execute(f"pragma rekey = \"x'{key}'\"")  # one-time migration; same secret, no KDF from now on
+                return con
+        except BaseException:
+            con.close()
+            raise
+        con.close()
+    raise VaultKeyError("vault key is missing or wrong (file is not a database)")
+
+
 def connect(path: str, key: str | None = None, migrations: list[str] | None = None):
     migrations = MIGRATIONS if migrations is None else migrations  # the audit db passes its own list
     latest = len(migrations)
-    con = sqlcipher.connect(path)
+    if key is not None:
+        con = _unlock(path, key)
+    else:
+        con = sqlcipher.connect(path)
+        if not _probe(con):
+            con.close()
+            raise VaultKeyError("vault key is missing or wrong (file is not a database)")
     try:
-        if key is not None:
-            con.execute("pragma key = '" + key.replace("'", "''") + "'")  # quoted, never logged
-        try:
-            con.execute("select count(*) from sqlite_master").fetchone()  # probe: fails if the key is wrong or missing
-        except sqlcipher.DatabaseError as e:
-            # only SQLCipher's "not a database" means key problem; locks, I/O and other errors propagate unchanged
-            if isinstance(e, sqlcipher.OperationalError) or "file is not a database" not in str(e):
-                raise
-            raise VaultKeyError("vault key is missing or wrong (file is not a database)") from e
         con.execute("pragma secure_delete = on")  # deleted text is overwritten in freed pages
         con.enable_load_extension(True)
         sqlite_vec.load(con)

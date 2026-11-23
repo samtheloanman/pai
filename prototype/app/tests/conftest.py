@@ -5,7 +5,7 @@ import tempfile
 # Must run before any test module imports main.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["DATA_DIR"] = tempfile.mkdtemp()
-os.environ["PAI_VAULT_KEY"] = "test-vault-key"
+os.environ["PAI_VAULT_KEY"] = "0123456789abcdef" * 4  # same shape as installer keys (openssl rand -hex 32)
 
 import hashlib
 
