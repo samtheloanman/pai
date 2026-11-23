@@ -40,7 +40,8 @@ services:
     depends_on: [litellm, speaches]
     restart: unless-stopped
 
-# Read from the PAI_VAULT_KEY of the shell that runs compose (scripts/pai-up fills it from the macOS Keychain) or .env.
+# Read from the PAI_VAULT_KEY of the shell that runs compose; scripts/pai-up fills it from the key store (macOS Keychain,
+# systemd-creds, or ~/.config/pai/vault-key) so the key is not kept in .env. Docker mounts it at /run/secrets/vault_key.
 secrets:
   vault_key: {environment: PAI_VAULT_KEY}
 
