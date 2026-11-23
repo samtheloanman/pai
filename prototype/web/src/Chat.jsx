@@ -11,8 +11,8 @@ const Text = () => <MarkdownTextPrimitive remarkPlugins={[remarkGfm]} />
 
 const PERSONAS = [
   { id: 'hermes', name: 'Hermes Core', role: 'Primary Local Assistant', badge: 'Voice & Chat' },
-  { id: 'chief', name: 'Chief of Staff', role: 'Daily Briefings & Priorities', badge: 'Paperclip' },
-  { id: 'rakazo', name: 'Rakazo Research', role: 'Sandboxed Web & Document Analysis', badge: 'Sandbox' },
+  { id: 'chief', name: 'Chief of Staff', role: 'Daily Briefings & Priorities', badge: 'Tasks' },
+  { id: 'research', name: 'PAI Research', role: 'Sandboxed Web & Document Analysis', badge: 'Sandbox' },
   { id: 'auditor', name: 'Policy Reviewer', role: 'Vault & Outbound Guard', badge: 'Local Gate' },
 ]
 
