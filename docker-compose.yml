@@ -2,10 +2,10 @@ version: "3.8"
 
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:1cabd20e1762a7a8444bf4a7110b346d923cd77ab6c97c984434140638c913ec
     container_name: pai-ollama
     ports:
-      - "${OLLAMA_PORT:-11435}:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
@@ -16,7 +16,7 @@ services:
       dockerfile: app/Dockerfile
     container_name: pai-os
     ports:
-      - "8088:8088"
+      - "127.0.0.1:8088:8088"
     environment:
       - PORT=8088
       - LITELLM_URL=${LITELLM_URL:-http://ollama:11434}
@@ -24,7 +24,7 @@ services:
       - CHAT_MODEL=${CHAT_MODEL:-gemma3:4b}
       - DECIDE_MODEL=${DECIDE_MODEL:-gemma3:4b}
       - DATA_DIR=/data
-      - PAI_VAULT_KEY=${PAI_VAULT_KEY:-18ca26418558ea06e8859fa79967800c82f717c1198f0d48bb856df335d02036}
+      - PAI_VAULT_KEY=${PAI_VAULT_KEY:?run ./run.sh once: it creates your own vault key in .env}
     volumes:
       - pai_data:/data
     restart: unless-stopped

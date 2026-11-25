@@ -175,7 +175,7 @@ To remove PAI but keep the vault: stop the stack and delete nothing else. To rem
 
 ## Known limits
 
-- Prototype: no login, image tags are not pinned, no signed or A/B updates.
+- Prototype: no login, no signed or A/B updates. Images are pinned by digest.
 - No speed or accuracy numbers have been measured yet.
 - Voice, memory, rules and the activity log work on this computer. Channels such as Telegram and email, and a hardware OS image, are not built.
 

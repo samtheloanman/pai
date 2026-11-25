@@ -4,6 +4,10 @@
 # starts the stack via scripts/pai-up, and verifies health check.
 set -eu
 
+# Same pinned images as docker-compose.yml.
+ALPINE_IMAGE="alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f"
+LLAMA_IMAGE="ghcr.io/ggml-org/llama.cpp:server@sha256:b0cd5490eefff30b40dcd47f7249a7d7211136908f73fe440a2a86b35a22b23b"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
@@ -145,10 +149,10 @@ docker volume inspect "$VOICE_VOL" >/dev/null 2>&1 || docker volume create --lab
 for ALT_PROJ in pai-mvp prototype; do
   if [ "$ALT_PROJ" != "$PROJ_NAME" ]; then
     if docker volume inspect "${ALT_PROJ}_models" >/dev/null 2>&1; then
-      docker run --rm -v "${ALT_PROJ}_models:/src:ro" -v "${MODELS_VOL}:/dst" alpine sh -c 'cp -rn /src/* /dst/ 2>/dev/null || true'
+      docker run --rm -v "${ALT_PROJ}_models:/src:ro" -v "${MODELS_VOL}:/dst" "$ALPINE_IMAGE" sh -c 'cp -rn /src/* /dst/ 2>/dev/null || true'
     fi
     if docker volume inspect "${ALT_PROJ}_voice" >/dev/null 2>&1; then
-      docker run --rm -v "${ALT_PROJ}_voice:/src:ro" -v "${VOICE_VOL}:/dst" alpine sh -c 'cp -rn /src/* /dst/ 2>/dev/null || true'
+      docker run --rm -v "${ALT_PROJ}_voice:/src:ro" -v "${VOICE_VOL}:/dst" "$ALPINE_IMAGE" sh -c 'cp -rn /src/* /dst/ 2>/dev/null || true'
     fi
   fi
 done
@@ -166,14 +170,14 @@ for arg in "$@"; do
 done
 
 # Validate GGUF in volume cache
-if docker run --rm -v "${MODELS_VOL}:/root/.cache/huggingface" ghcr.io/ggml-org/llama.cpp:server -cl 2>/dev/null | grep -q "Qwen3"; then
+if docker run --rm -v "${MODELS_VOL}:/root/.cache/huggingface" "$LLAMA_IMAGE" -cl 2>/dev/null | grep -q "Qwen3"; then
   echo "  ✓ GGUF model found in volume '${MODELS_VOL}'."
 else
   echo "  i GGUF model weights will be pulled automatically by llama.cpp server on first start (${MODEL_HF})."
 fi
 
 # Validate Speaches voice models in volume cache
-if docker run --rm -v "${VOICE_VOL}:/cache" alpine sh -c '[ -d /cache/models--Systran--faster-whisper-small ] && [ -d /cache/models--speaches-ai--Kokoro-82M-v1.0-ONNX ]' 2>/dev/null; then
+if docker run --rm -v "${VOICE_VOL}:/cache" "$ALPINE_IMAGE" sh -c '[ -d /cache/models--Systran--faster-whisper-small ] && [ -d /cache/models--speaches-ai--Kokoro-82M-v1.0-ONNX ]' 2>/dev/null; then
   echo "  ✓ Speaches voice models verified in volume '${VOICE_VOL}'."
 else
   echo "  i Speaches voice models will be automatically fetched on service startup."

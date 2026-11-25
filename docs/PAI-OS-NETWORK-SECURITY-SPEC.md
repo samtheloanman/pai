@@ -28,7 +28,7 @@ Define the architectural integration of top open-source AI OS frameworks (`agire
 | **`actions.py`** (`pai.db`) | State machine gating risky actions (`none`, `send`, `delete`, `spend`, `system`) with TTL & operator approval. | **100% Reusable**. Acts as the Little Snitch/OpenSnitch confirmation gate for unknown network destinations. | Add executor `network_unblock` and `interface_toggle` under `risk_kind = 'system'`. |
 | **`store.py` (v6 Schema)** | `connections_ingress` & `skills_and_tools` tables with "Two Doors, One Rule" privacy tiers (`A`, `B`, `C`). | **100% Reusable**. Schema explicitly models door planes (`door1_mesh`, `door2_blind`, `outbound_opt_in`). | Bind network interface policies (`eth0`, `wlan0`, `tailscale0`) directly to `connections_ingress` tiers. |
 | **`routing.py` / `blocks.py`** | 3-tier local router that classifies intents locally before hitting any network interface. | **100% Reusable**. Keeps user interaction 100% local; prevents accidental cloud routing. | Add regex rule blocking prompt injection that attempts outbound webhook or socket exfiltration. |
-| **`setup-pai-vpn-gateway.sh`** | Tailscale exit node, nftables MASQUERADE, strict IP forwarding, DNS leak isolation. | **95% Reusable**. Foundational WireGuard overlay for Door 1. | Extend nftables ruleset to support strict fail-closed default-deny on raw physical interfaces. |
+| **`setup-pai-vpn-gateway.sh`** | Rewritten 2026-11-25: joins the private network and publishes the PAI app to it with `tailscale serve`. No exit node, no LAN routes, no Tailscale SSH, no NAT (PRD LAN-2). | Foundational WireGuard overlay for Door 1. | Add the nftables default-drop ruleset (plan Phase 5). |
 
 ---
 

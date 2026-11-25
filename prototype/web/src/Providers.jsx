@@ -105,7 +105,7 @@ export function Providers() {
       <p className="muted">Long numbers (such as payment card numbers or account IDs) are kept on this machine even when cloud routing is enabled.</p>
       {s.restart_required && (
         <div className="banner" role="status">
-          <span>Restart LiteLLM to apply provider changes: <code>docker compose restart litellm</code></span>
+          <span>Restart LiteLLM to apply provider changes: <code>docker compose restart egress litellm</code></span>
           <button type="button" className="btn btn-sm" onClick={() => wrap(() => api('/api/providers/restarted', { method: 'POST' }))}>Mark restarted</button>
         </div>
       )}

@@ -6,10 +6,11 @@ Runs the PAI software on a laptop or a cloud VM: setup interview, chat with loca
 |---|---|---|
 | `llm` | llama.cpp server with a GGUF model (local mode only) | `ghcr.io/ggml-org/llama.cpp:server` |
 | `speaches` | Local speech-to-text (faster-whisper) and text-to-speech (Kokoro) | `ghcr.io/speaches-ai/speaches:latest-cpu` |
-| `litellm` | One OpenAI-compatible address for chat, STT and TTS | `ghcr.io/berriai/litellm:main-stable` |
+| `litellm` | One OpenAI-compatible address for chat, STT and TTS | `ghcr.io/berriai/litellm` v1.108.17-lts, pinned by digest |
+| `egress` | Allowlist proxy: LiteLLM's only way out; forwards to the provider hosts you turned on and nothing else | `ubuntu/squid`, pinned by digest |
 | `app` | PAI web app: FastAPI back end + React chat front end (assistant-ui, Geist font), encrypted SQLite (SQLCipher) vault in the `data` volume | built from `app/Dockerfile` (builds `web/` first) |
 
-Prototype only: image tags are not pinned yet, no login on the app, no A/B updates. See Known limits.
+Prototype only: images are pinned by digest and LiteLLM can reach only the provider hosts you turn on, but there is no login on the app, no A/B updates. See Known limits.
 
 ## Run on a laptop (32-64 GB)
 
@@ -77,7 +78,7 @@ or by installing Tailscale on the VM and changing the port binding to the VM's T
 4. **Memory**: see and forget anything PAI stored.
 5. **Approvals**: risky actions are proposed, never run directly. Saying "delete memory 3" in chat creates a pending action; it runs only when you press Confirm (at most once), and Reject or a timeout (15 minutes) discards it.
 6. **Activity**: a hash-chained log of what PAI did (model calls, routes, proposals, confirmations, config changes). "Verify" re-checks the chain; it reports whether edits, deletions or reordering are detected.
-7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart litellm`), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
+7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart egress litellm`), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
 
 ## Routing and the route bench
 

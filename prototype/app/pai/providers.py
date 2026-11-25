@@ -1,13 +1,15 @@
 """Model providers and the owner's cloud opt-in. Keys live only in the encrypted vault (providers table).
 
 LiteLLM learns them through a generated config + a 0600 env file in PAI_SHARED_DIR; the YAML only holds
-`os.environ/PAI_KEY_<NAME>` references. Changes take effect after `docker compose restart litellm`.
+`os.environ/PAI_KEY_<NAME>` references. Changes take effect after `docker compose restart egress litellm`.
+The egress proxy reads `egress-allowlist.txt` from the same directory: hosts not listed there are unreachable.
 """
 import os
 import re
 import shlex
 import tempfile
 import time
+from urllib.parse import urlsplit
 from contextlib import closing
 
 import yaml
@@ -26,6 +28,14 @@ DEFAULT_MODELS = {
     "nvidia": "nvidia_nim/mistralai/mistral-large-4-1t-a52b",
     "huggingface": "huggingface/meta-llama/Llama-3.3-70B-Instruct",
 }
+# Hosts LiteLLM may reach for each cloud provider. Everything else is refused by the egress proxy.
+# huggingface is UNVERIFIED (same caveat as DEFAULT_MODELS).
+PROVIDER_HOSTS = {
+    "openrouter": ("openrouter.ai",),
+    "nvidia": ("integrate.api.nvidia.com",),
+    "huggingface": ("router.huggingface.co",),
+}
+HOST_RE = re.compile(r"(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*")
 CLOUD_SYSTEM = "You are PAI, a private assistant. Be brief and concrete."
 WARNING = "Cloud models see what you send. Free tiers may log prompts. Names and secrets are blocked or kept on this box."
 _BASE_YAML = [os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "litellm.local.yaml"),
@@ -124,6 +134,26 @@ def render_litellm_config() -> str:
     return yaml.safe_dump(cfg, sort_keys=False)
 
 
+def render_egress_allowlist() -> str:
+    """One host per line for the egress proxy. Empty unless the owner turned cloud on or named a local backend."""
+    hosts, r = set(), rows()
+    if cloud_enabled():
+        for n in CLOUD:
+            if r.get(n, {}).get("key"):
+                hosts.update(PROVIDER_HOSTS[n])
+    for n in LOCAL_BACKENDS:  # same condition as render_litellm_config
+        base_url, model = get_setting(f"{n}_base"), r.get(n, {}).get("model")
+        if base_url and model:
+            try:
+                host = (urlsplit(base_url).hostname or "").lower()
+            except ValueError:
+                host = ""
+            # exact match only: a leading dot would be a wildcard in the proxy's list
+            if HOST_RE.fullmatch(host) and base_url == base_url.strip() and not re.search(r"\s", base_url):
+                hosts.add(host)
+    return "".join(f"{h}\n" for h in sorted(hosts))
+
+
 KEY_RE = re.compile(r"[\x21-\x7e]{1,512}")  # printable ASCII only: anything else could break the shell that sources the env file
 
 
@@ -160,3 +190,4 @@ def write_files() -> None:
     os.makedirs(d, exist_ok=True)
     _write_if_changed(os.path.join(d, "litellm.env"), render_env(), 0o600)
     _write_if_changed(os.path.join(d, "litellm.generated.yaml"), render_litellm_config(), 0o644)
+    _write_if_changed(os.path.join(d, "egress-allowlist.txt"), render_egress_allowlist(), 0o644)

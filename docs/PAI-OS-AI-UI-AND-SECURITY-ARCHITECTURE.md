@@ -1,5 +1,7 @@
 # PAI OS — AI-First Linux UI, Multi-Shield Security & Intelligent Diagnostics
 
+> **DNS and remote access (decided 2026-11-24):** PAI resolves names with its own validating resolver (Unbound, DNSSEC) on the box. It does not send DNS to a public DNS-over-HTTPS service, which matches SPEC.md section 5.5. The box is not an exit node and does not carry other devices' traffic (PRD LAN-2); see `docs/PAI-MESH-VPN-SETUP.md`. Where this document says otherwise, that text describes a later, opt-in tier.
+
 **Status:** SPECIFICATION & ARCHITECTURAL BLUEPRINT  
 **Target:** PAI OS Appliance, Laptop Client & Portable Node (`pai`, `pai-mvp`)
 
@@ -53,20 +55,20 @@ PAI OS secures all connections across three complementary layers:
 ├───────────────────────┤    ├───────────────────────┤    ├───────────────────────┤
 │ • Door 1 WireGuard    │    │ • Cloudflare Tunnel   │    │ • OpenSnitch eBPF     │
 │ • Device tags:        │    │   (Zero Open Ports)   │    │   process firewall    │
-│   tag:pai-box/client  │    │ • 1.1.1.1 DoH with    │    │ • nftables fail-closed│
+│   tag:pai-box/client  │    │ • Local Unbound with  │    │ • nftables fail-closed│
 │ • MagicDNS resolution │    │   DNSSEC & malware cut│    │ • usbguard BadUSB cut │
-│ • Full-tunnel exit    │    │ • Shielded Door 2     │    │ • audit.db SHA-256    │
-│   node on untrusted   │    │   webhook ingress     │    │   tamper-evident log  │
+│ • No exit node, no    │    │ • Shielded Door 2     │    │ • audit.db SHA-256    │
+│   LAN routes (LAN-2)  │    │   webhook ingress     │    │   tamper-evident log  │
 └───────────────────────┘    └───────────────────────┘    └───────────────────────┘
 ```
 
 1. **Tailscale (Door 1 — Sovereign Encrypted Overlay)**:
    - Every PAI node joins an encrypted WireGuard mesh (`100.x.y.z`).
    - Devices authenticate via cryptographic node keys; public internet ports remain closed.
-   - When on public Wi-Fi, the client toggles **Full-Tunnel Mode**, routing 100% of traffic through the user's home PAI Box.
+   - The PAI box is not an exit node and advertises no LAN routes in the MVP (PRD LAN-2). Full-tunnel mode is a later, opt-in tier.
 2. **Cloudflare Zero Trust (Door 2 — Shielded Ingress/Egress & Encrypted DNS)**:
    - Inbound webhooks (e.g. mobile app notifications, external voice endpoints) run via `cloudflared` tunnels. No port forwarding on the home router.
-   - All DNS queries resolve over DNS-over-HTTPS (DoH) via `1.1.1.1` with DNSSEC verification, bypassing local ISP eavesdropping and DNS injection.
+   - The box resolves DNS with its own validating resolver (Unbound, DNSSEC). It does not use a public DoH service; SPEC.md section 5.5 blocks those.
 3. **Local Host Sentinel (Linux Kernel & Hardware Hardening)**:
    - **OpenSnitch eBPF Daemon**: Traps every outbound network socket per process path and user ID; integrates with PAI’s `actions.py` approval gate.
    - **`nftables` Fail-Closed Ruleset**: Raw physical interfaces (`eth0`, `wlan0`) are blocked from general egress unless validated or routed through `tailscale0`.
@@ -82,7 +84,7 @@ Whenever a PAI device connects to a physical Wi-Fi or LAN feed, `pai-net-diag` e
 | :--- | :--- | :--- | :--- |
 | **1. Gateway & ARP** | Queries default gateway IP; compares MAC to permanent neighbor table and OUI database. | ARP spoofing, Man-in-the-Middle (MITM), duplicate IP collisions. | Pass: Known gateway MAC.<br>Fail: Gateway MAC mismatch. |
 | **2. DHCP Sentry** | Broadcasts DHCP DISCOVER probe; monitors for multiple or unauthorized DHCPOFFERs. | Rogue DHCP servers pushing malicious default gateways or DNS overrides. | Pass: Single authorized server.<br>Fail: Rogue DHCP IP flagged. |
-| **3. DNS Hygiene** | Resolves canary domains across local DHCP DNS vs. Cloudflare DoH (`1.1.1.1`) vs. Quad9 (`9.9.9.9`). | DNS hijacking, NXDOMAIN redirection, censorship, or missing DNSSEC. | Pass: Identical cryptographic IPs.<br>Fail: DNS poisoning detected. |
+| **3. DNS Hygiene** | Resolves canary domains across local DHCP DNS vs. the box's own validating resolver (Unbound, DNSSEC). | DNS hijacking, NXDOMAIN redirection, censorship, or missing DNSSEC. | Pass: Identical cryptographic IPs.<br>Fail: DNS poisoning detected. |
 | **4. TLS Canary** | Probes pinned HTTPS canary endpoint (`https://canary.pai.internal`); verifies root certificate fingerprints. | Captive portal redirection (HTTP 302/307), SSL strip, or MITM proxy certificates. | Pass: Valid pinned fingerprint.<br>Fail: Interception / captive redirect. |
 | **5. Egress & VPN** | Tests WireGuard UDP 41641 handshakes and HTTPS 443 egress; checks for plaintext DNS leaks. | ISP port blocking, throttled VPN handshakes, or plaintext leakages. | Pass: Unfiltered WireGuard link.<br>Fail: Tunnel blocked / DNS leak. |
 | **6. Airspace Noise** | Sniffs 802.11 management frames via internal Wi-Fi or ESP32 Sentinel; checks PMF status. | Deauthentication floods (type 0, subtype 12), Evil Twin SSIDs, BLE advertisement floods. | Pass: Clean RF spectrum & PMF active.<br>Fail: Deauth storm / BSSID clone. |
