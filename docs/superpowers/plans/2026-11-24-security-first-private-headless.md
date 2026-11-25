@@ -50,7 +50,7 @@ Blocks every later phase that exposes the app.
 
 ### Phase 2: private network, installable web app, QR pairing (was item 3)
 
-- [ ] Web app manifest and service worker so it installs on a phone home screen (APP-1).
+- [ ] Web app manifest and service worker so it installs on a phone home screen (APP-1). State on 2026-11-25: a minimal manifest exists (`prototype/app/static/manifest.json`: name, colours, standalone) with no icons and no service worker, so phones will not offer to install it. No native app exists; `docs/superpowers/specs/2026-11-08-mobile-direction.md` recommends a Capacitor wrapper and is still marked decision pending. Its second open question (Tailscale as the default path) is now answered: yes.
 - [ ] Publish the app on the overlay interface only (`tailscale serve`); never on the LAN or WAN interface.
 - [ ] Pairing page shows a QR code holding the tailnet URL and a one-time device code from Phase 1 (APP-2).
 - [ ] Tailscale account is the default; Headscale is the documented option (`PAI_LOGIN_SERVER`). Owner decision 2026-11-25. First version of the doc: `docs/PAI-MESH-VPN-SETUP.md`.
@@ -87,6 +87,14 @@ Blocks every later phase that exposes the app.
 - [ ] Credentials in the SQLCipher vault only. Writes (send, create, delete) go through the confirm gate.
 - [ ] Privacy level shown for each connector and channel (APP-11).
 - [ ] Check the `imapclient` licence before adding it; the API reported no SPDX id.
+
+Owner decision 2026-11-25: automation hubs and a mail front end ship out of the box. This reverses the earlier rejection of Composio. All are off until the owner connects them.
+
+- [ ] Hub connectors: Composio, Zapier, Make (cloud services) and n8n (self-hosted). One adapter interface; each exposes its actions to the router as tools. Every write goes through the confirm gate and the audit log.
+- [ ] Privacy level per hub on the Connectors page: n8n on the box = local; Composio, Zapier and Make = cloud (the service sees the data and holds the account tokens). Their hosts are added to the outbound allowlist only while the hub is connected; block-list and masking rules apply to what is sent.
+- [ ] n8n: its licence is not open source (GitHub reports no SPDX id; read the Sustainable Use License before shipping it inside a sold box). Safe default: connect to an n8n the owner runs, do not bundle it.
+- [ ] Mail front end on local models: evaluate Mail-0/Zero (MIT, active 2026-11) and elie222/inbox-zero (active 2026-11; licence has no SPDX id, read it first). Point the chosen one's model setting at PAI's LiteLLM address so triage and drafting run on the box. Run a skillspector-style review and pin by digest before adding either.
+- [ ] Both mail projects are built around Gmail and Outlook OAuth; confirm each works against plain IMAP before choosing, or keep the in-process `imapclient` path for other mailboxes.
 
 ### Phase 7: benchmarks (was item 10)
 
