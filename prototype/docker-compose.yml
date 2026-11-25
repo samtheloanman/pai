@@ -36,6 +36,8 @@ services:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"  # use the bundled price table; no fetch from GitHub at start
     volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro", "shared:/shared:ro"]
     networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     depends_on: [egress]
     restart: unless-stopped
 
@@ -46,6 +48,9 @@ services:
       PAI_EGRESS_ALLOW: ${PAI_EGRESS_ALLOW:-}  # extra hosts, space separated; the app writes the rest
     volumes: ["./egress:/egress:ro", "./egress/squid.conf:/etc/squid/squid.conf:ro", "shared:/shared:ro"]
     networks: [internal, edge]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]  # squid drops from root to its own user at start
     restart: unless-stopped
 
   app:

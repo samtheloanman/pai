@@ -92,3 +92,25 @@ def test_proxy_config_allows_only_the_allowlist():
     assert rules[-1] == "http_access deny all"
     assert [r for r in rules if r.startswith("http_access allow")] == ["http_access allow allowed"]
     assert 'acl allowed dstdomain "/run/egress/allow.txt"' in conf
+
+
+def test_run_sh_does_not_pipe_into_grep_q_under_pipefail():
+    # `producer | grep -q` under `set -o pipefail` reports "no match" when grep exits early and the producer
+    # gets SIGPIPE. Here that would create a second vault key over an existing vault.
+    text = (ROOT / "run.sh").read_text()
+    assert "pipefail" in text
+    assert not re.search(r"\|\s*grep\s+-[a-zA-Z]*q", text)
+
+
+def test_openrouter_setup_mode_docs_open_the_proxy_for_openrouter():
+    text = (ROOT / "prototype" / "README.md").read_text()
+    section = text[text.index("## Setup mode with OpenRouter"):]
+    section = section[:section.index("\n## ", 5)]
+    assert "PAI_EGRESS_ALLOW=openrouter.ai" in section
+
+
+@pytest.mark.parametrize("name", ["litellm", "egress"])
+def test_network_facing_services_drop_privileges(name):
+    svc = yaml.safe_load(COMPOSE[1].read_text())["services"][name]
+    assert "no-new-privileges:true" in svc.get("security_opt", [])
+    assert svc.get("cap_drop") == ["ALL"]

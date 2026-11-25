@@ -107,9 +107,10 @@ cmd_down() {
     run tailscale down
   fi
   # Older versions of this script made the box a router for the whole LAN. Undo exactly those changes.
+  # The settings file is removed; the live forwarding switch is left alone because Docker needs it on for
+  # container networking. The removed settings stop applying at the next boot.
   if [[ -f /etc/sysctl.d/99-pai-vpn.conf || $DRY -eq 1 ]]; then
     run rm -f /etc/sysctl.d/99-pai-vpn.conf
-    run sysctl -w net.ipv4.ip_forward=0 net.ipv6.conf.all.forwarding=0
   fi
   if command -v iptables >/dev/null 2>&1 && [[ $DRY -eq 0 ]]; then
     local wan; wan="$(ip route show default 2>/dev/null | awk '{print $5; exit}')"

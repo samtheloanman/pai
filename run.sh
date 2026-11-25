@@ -16,7 +16,8 @@ fi
 # public and so protects nothing.
 LEGACY_PUBLIC_KEY="18ca26418558ea06e8859fa79967800c82f717c1198f0d48bb856df335d02036"
 if [ -z "${PAI_VAULT_KEY:-}" ] && ! grep -q '^PAI_VAULT_KEY=[^[:space:]]' .env 2>/dev/null; then
-    if docker volume ls -q | grep -q '_pai_data$'; then
+    VOLUMES="$(docker volume ls -q)"  # captured first: piping straight into a quiet grep under pipefail can report a false "no match"
+    if grep -q '_pai_data$' <<<"$VOLUMES"; then
         echo "Error: an existing PAI vault was found, and no PAI_VAULT_KEY is set." >&2
         echo "  If it was created before this version it is encrypted with the old published default key." >&2
         echo "  To keep that data, add this line to .env (the key is public, so treat the vault as unprotected):" >&2

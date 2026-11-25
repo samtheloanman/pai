@@ -1,8 +1,9 @@
 """Model providers and the owner's cloud opt-in. Keys live only in the encrypted vault (providers table).
 
 LiteLLM learns them through a generated config + a 0600 env file in PAI_SHARED_DIR; the YAML only holds
-`os.environ/PAI_KEY_<NAME>` references. Changes take effect after `docker compose restart egress litellm`.
-The egress proxy reads `egress-allowlist.txt` from the same directory: hosts not listed there are unreachable.
+`os.environ/PAI_KEY_<NAME>` references. Changes take effect after `docker compose restart litellm`.
+The egress proxy reads `egress-allowlist.txt` from the same directory and reloads it when it changes: hosts not
+listed there are unreachable.
 """
 import os
 import re

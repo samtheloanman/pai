@@ -47,3 +47,19 @@ def test_write_files_writes_the_allowlist(vault, tmp_path, monkeypatch):
     providers.write_files()
     assert (tmp_path / "egress-allowlist.txt").read_text() == "openrouter.ai\n"
     assert os.stat(tmp_path / "egress-allowlist.txt").st_mode & 0o777 == 0o644
+
+
+def test_startup_writes_the_allowlist_for_an_install_that_already_has_cloud_on(vault, tmp_path, monkeypatch):
+    # An install upgraded from before the egress proxy has no allowlist file; without this, cloud would stop working.
+    import main
+    monkeypatch.setenv("PAI_SHARED_DIR", str(tmp_path))
+    providers.save_key("openrouter", "sk-or-test"); providers.set_cloud_enabled(True)
+    assert not (tmp_path / "egress-allowlist.txt").exists()
+    main.sync_provider_files()
+    assert (tmp_path / "egress-allowlist.txt").read_text() == "openrouter.ai\n"
+
+
+def test_startup_survives_an_unwritable_shared_dir(vault, monkeypatch):
+    import main
+    monkeypatch.setenv("PAI_SHARED_DIR", "/proc/nope/shared")
+    main.sync_provider_files()  # logs and carries on: the app must still boot

@@ -124,3 +124,13 @@ def test_verify_allows_no_login_only_while_unpublished(tmp_path):
 def test_verify_fails_when_a_required_tool_is_missing(tmp_path):
     r = run(VERIFY, path_dir=tmp_path)
     assert r.returncode == 1 and "required" in r.stdout
+
+
+def test_teardown_leaves_packet_forwarding_alone(tmp_path):
+    # Docker needs net.ipv4.ip_forward=1 for container networking; forcing it to 0 would cut the PAI stack off.
+    stub(tmp_path, "tailscale", "exit 0")
+    r = run(SETUP, "down", "--dry-run", path_dir=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert "ip_forward" not in r.stdout and "forwarding" not in r.stdout
+    assert "rm -f /etc/sysctl.d/99-pai-vpn.conf" in r.stdout
+    assert not re.search(r"sysctl\s+-w", code_lines(SETUP))

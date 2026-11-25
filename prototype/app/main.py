@@ -198,8 +198,18 @@ async def fetch_voice_models() -> None:
                 await asyncio.sleep(10)
 
 
+def sync_provider_files() -> None:
+    """Rewrite the LiteLLM config and the egress allowlist from the vault at every start, so an install upgraded
+    from a version without the egress proxy keeps its cloud and local-backend routes. Never blocks the boot."""
+    try:
+        providers.write_files()
+    except (OSError, ValueError) as e:
+        print(f"provider files not written: {e}")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    sync_provider_files()
     asyncio.create_task(fetch_voice_models())
     yield
 

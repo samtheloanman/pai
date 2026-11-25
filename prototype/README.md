@@ -54,7 +54,8 @@ Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a
 Uses a free OpenRouter model for chat so setup works before a local model is downloaded. **The interview answers leave the machine** and free models may log prompts. Voice stays local.
 
 ```bash
-# in .env: OPENROUTER_API_KEY=..., LITELLM_CONFIG=litellm.openrouter.yaml
+# in .env: OPENROUTER_API_KEY=..., LITELLM_CONFIG=litellm.openrouter.yaml, PAI_EGRESS_ALLOW=openrouter.ai
+# PAI_EGRESS_ALLOW opens the outbound proxy for that one host; without it LiteLLM cannot reach OpenRouter.
 docker compose up -d --build     # no --profile local: llm is not started
 ```
 
@@ -78,7 +79,7 @@ or by installing Tailscale on the VM and changing the port binding to the VM's T
 4. **Memory**: see and forget anything PAI stored.
 5. **Approvals**: risky actions are proposed, never run directly. Saying "delete memory 3" in chat creates a pending action; it runs only when you press Confirm (at most once), and Reject or a timeout (15 minutes) discards it.
 6. **Activity**: a hash-chained log of what PAI did (model calls, routes, proposals, confirmations, config changes). "Verify" re-checks the chain; it reports whether edits, deletions or reordering are detected.
-7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart egress litellm`), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
+7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart litellm`; the outbound proxy picks up the new host list by itself within a few seconds), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
 
 ## Routing and the route bench
 

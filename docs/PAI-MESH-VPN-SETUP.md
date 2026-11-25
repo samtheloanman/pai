@@ -71,7 +71,7 @@ It contacts no outside service.
 sudo ./setup-pai-vpn-gateway.sh down
 ```
 
-This unpublishes the app and disconnects. It also removes what the earlier version of the script set up: the packet-forwarding settings in `/etc/sysctl.d/99-pai-vpn.conf` and its NAT and forwarding rules.
+This unpublishes the app and disconnects. It also removes what the earlier version of the script set up: the settings file `/etc/sysctl.d/99-pai-vpn.conf` and its NAT and forwarding rules. Packet forwarding itself is left on, because Docker needs it; without the NAT rules and the advertised routes the box no longer routes for other devices.
 
 ## Not in this version
 
