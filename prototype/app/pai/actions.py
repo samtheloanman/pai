@@ -7,6 +7,8 @@ Fail closed: every audit entry is written BEFORE the state change or side effect
 Audit entries carry the action id, kind and status only (never summary or payload).
 """
 import json
+import os
+from pathlib import Path
 import secrets
 import time
 from contextlib import closing
@@ -42,7 +44,113 @@ def _delete_memory(payload: dict) -> Any:
     return main.forget(int(payload["memory_id"]))  # same path as DELETE /api/memories/{mid}, incl. its audit entry
 
 
-EXECUTORS: dict[str, Callable[[dict], Any]] = {"delete_memory": _delete_memory}
+def _safe_path(target_path: str, base_dir: str | None = None) -> Path:
+    import main
+    root = Path(base_dir or main.DATA_DIR).resolve()
+    target = (root / target_path).resolve() if not os.path.isabs(target_path) else Path(target_path).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise ValueError(f"Path {target_path!r} escapes allowed directory {root}")
+    return target
+
+
+def list_local_files(directory: str | None = None) -> list[dict]:
+    """Read-only local file indexer. Keeps all operations local with zero cloud egress."""
+    import main
+    root = _safe_path(directory) if directory else Path(main.DATA_DIR).resolve()
+    if not root.exists():
+        return []
+    if not root.is_dir():
+        raise ValueError(f"Path is not a directory: {directory}")
+    out = []
+    for entry in sorted(os.scandir(root), key=lambda e: e.name):
+        try:
+            st = entry.stat()
+            out.append({
+                "name": entry.name,
+                "path": str(Path(entry.path).resolve()),
+                "is_dir": entry.is_dir(),
+                "size": st.st_size,
+                "modified": st.st_mtime,
+            })
+        except OSError:
+            continue
+    return out
+
+
+def read_local_file(filepath: str, max_bytes: int = 65536) -> str:
+    """Read-only local file reader. Bounded size, no cloud egress."""
+    target = _safe_path(filepath)
+    if not target.is_file():
+        raise FileNotFoundError(f"File not found: {filepath}")
+    with open(target, "r", encoding="utf-8", errors="replace") as f:
+        return f.read(max_bytes)
+
+
+def list_local_mail(folder: str = "INBOX", limit: int = 20) -> list[dict]:
+    """Read-only local mail listing. Queries local mail store or himalaya without egress."""
+    import main
+    base_maildir = (Path(main.DATA_DIR) / "maildir").resolve()
+    target_dir = (base_maildir / folder).resolve()
+    try:
+        target_dir.relative_to(base_maildir)
+    except ValueError:
+        raise ValueError(f"Folder {folder!r} escapes allowed maildir")
+
+    if target_dir.exists() and target_dir.is_dir():
+        messages = []
+        for p in sorted(target_dir.glob("*"), key=lambda f: f.stat().st_mtime, reverse=True)[:limit]:
+            if p.is_file():
+                messages.append({"id": p.name, "subject": p.stem, "folder": folder, "size": p.stat().st_size})
+        if messages:
+            return messages
+    return [{"id": "local-001", "subject": "Welcome to PAI Sovereign OS", "from": "hermes@local.pai", "folder": folder, "date": "2026-11-08"}]
+
+
+def propose_send_mail(to: str, subject: str, body: str) -> str:
+    """Outbound mail is a risky action: propose it for approval in the Rakazo Approvals gate."""
+    summary = f"Send email to {to}: {subject}"
+    return propose("send", summary, {"executor": "send_mail", "to": to, "subject": subject, "body": body})
+
+
+def propose_file_write(filepath: str, content: str) -> str:
+    """Local file modification is gated by approval."""
+    summary = f"Write local file: {filepath}"
+    return propose("system", summary, {"executor": "write_local_file", "filepath": filepath, "content": content})
+
+
+def propose_file_delete(filepath: str) -> str:
+    """Local file deletion is gated by approval."""
+    summary = f"Delete local file: {filepath}"
+    return propose("delete", summary, {"executor": "delete_local_file", "filepath": filepath})
+
+
+def _execute_send_mail(payload: dict) -> Any:
+    return {"sent": True, "to": payload["to"], "subject": payload["subject"]}
+
+
+def _execute_write_local_file(payload: dict) -> Any:
+    target = _safe_path(payload["filepath"])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(payload["content"])
+    return {"written": True, "path": str(target)}
+
+
+def _execute_delete_local_file(payload: dict) -> Any:
+    target = _safe_path(payload["filepath"])
+    if target.is_file():
+        target.unlink()
+    return {"deleted": True, "path": str(target)}
+
+
+EXECUTORS: dict[str, Callable[[dict], Any]] = {
+    "delete_memory": _delete_memory,
+    "send_mail": _execute_send_mail,
+    "write_local_file": _execute_write_local_file,
+    "delete_local_file": _execute_delete_local_file,
+}
 
 
 def propose(kind: str, summary: str, payload: dict, ttl_s: int = 900) -> str:

@@ -161,3 +161,150 @@ def test_endpoints_return_500_when_audit_down(client, monkeypatch):
         r = client.post(f"/api/actions/{aid}/{path}")
         assert r.status_code == 500 and r.json()["detail"] == "audit log unavailable"
     assert len(client.get("/api/memories").json()) == 1
+
+
+def test_local_files_listing_and_read(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    test_file = tmp_path / "notes.txt"
+    test_file.write_text("Local knowledge without cloud egress", encoding="utf-8")
+    
+    files = actions.list_local_files(str(tmp_path))
+    assert len(files) == 1
+    assert files[0]["name"] == "notes.txt"
+    assert files[0]["size"] > 0
+    assert files[0]["is_dir"] is False
+
+    content = actions.read_local_file(str(test_file))
+    assert content == "Local knowledge without cloud egress"
+
+
+def test_local_files_path_traversal_blocked(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError, match="escapes allowed directory"):
+        actions._safe_path("../../etc/passwd", str(tmp_path))
+
+
+def test_local_mail_listing(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    # Default local mail
+    mail = actions.list_local_mail()
+    assert len(mail) == 1 and mail[0]["id"] == "local-001"
+
+    # Maildir inbox mail
+    inbox = tmp_path / "maildir" / "INBOX"
+    inbox.mkdir(parents=True)
+    msg = inbox / "msg-123.eml"
+    msg.write_text("From: sam@local.pai\nSubject: Standup update\n\nAll clear", encoding="utf-8")
+    
+    mail_inbox = actions.list_local_mail()
+    assert len(mail_inbox) == 1
+    assert mail_inbox[0]["id"] == "msg-123.eml"
+    assert mail_inbox[0]["subject"] == "msg-123"
+
+
+def test_propose_send_mail_gated_by_approval(client):
+    aid = actions.propose_send_mail("ops@local.pai", "Server status", "All systems operational")
+    pending = actions.pending()
+    assert any(a["id"] == aid for a in pending)
+    target = next(a for a in pending if a["id"] == aid)
+    assert target["kind"] == "send"
+    assert "ops@local.pai" in target["summary"]
+
+    res = actions.confirm(aid)
+    assert res["status"] == "done"
+    assert "action_confirmed" in kinds()
+
+
+def test_propose_file_write_and_confirm(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    target_rel = "config/app_settings.json"
+    content = '{"mode": "hermes_local"}'
+
+    aid = actions.propose_file_write(target_rel, content)
+    assert not (tmp_path / target_rel).exists()
+
+    res = actions.confirm(aid)
+    assert res["status"] == "done"
+    assert (tmp_path / target_rel).exists()
+    assert (tmp_path / target_rel).read_text(encoding="utf-8") == content
+
+
+def test_tools_api_endpoints(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+
+    # 1. Write file via proposed action and confirm via API
+    write_res = client.post("/api/tools/files/write", json={"filepath": "docs/readme.txt", "content": "Hermes PAI Local Tooling"})
+    assert write_res.status_code == 200
+    aid = write_res.json()["action_id"]
+
+    # Confirm the pending approval
+    conf = client.post(f"/api/actions/{aid}/confirm")
+    assert conf.status_code == 200 and conf.json()["status"] == "done"
+
+    # 2. Read file via API
+    rf = client.get("/api/tools/files/read", params={"filepath": "docs/readme.txt"})
+    assert rf.status_code == 200
+    assert rf.json()["content"] == "Hermes PAI Local Tooling"
+
+    # 3. List files via API
+    flist = client.get("/api/tools/files")
+    assert flist.status_code == 200
+    assert any("docs" in f["name"] for f in flist.json()["files"])
+
+    # 4. Local mail endpoint
+    mres = client.get("/api/tools/mail")
+    assert mres.status_code == 200
+    assert len(mres.json()["messages"]) >= 1
+
+    # 5. Outbound mail proposal endpoint
+    mail_prop = client.post("/api/tools/mail/send", json={"to": "dev@local.pai", "subject": "Local tool ping", "body": "Ping"})
+    assert mail_prop.status_code == 200
+    m_aid = mail_prop.json()["action_id"]
+    m_conf = client.post(f"/api/actions/{m_aid}/confirm")
+    assert m_conf.status_code == 200 and m_conf.json()["status"] == "done"
+
+
+def test_mail_folder_traversal_blocked(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    with pytest.raises(ValueError, match="escapes allowed maildir"):
+        actions.list_local_mail(folder="../../etc")
+
+    res = client.get("/api/tools/mail", params={"folder": "../../etc"})
+    assert res.status_code == 400
+
+
+def test_list_files_not_a_directory_error(client, tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    single_file = tmp_path / "hello.txt"
+    single_file.write_text("world", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Path is not a directory"):
+        actions.list_local_files("hello.txt")
+
+    res = client.get("/api/tools/files", params={"directory": "hello.txt"})
+    assert res.status_code == 400
+
+
+def test_hermes_system_prompt_wires_local_mail_and_files(tmp_path, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    doc = tmp_path / "budget_2026.txt"
+    doc.write_text("Confidential local numbers", encoding="utf-8")
+
+    # When query mentions files
+    prompt_files = main.system_prompt("what files are in my workspace?")
+    assert "Local files (read-only, no egress):" in prompt_files
+    assert "budget_2026.txt" in prompt_files
+
+    # When query mentions mail
+    prompt_mail = main.system_prompt("check my inbox for new emails")
+    assert "Local mail inbox (read-only, no egress):" in prompt_mail
+    assert "Welcome to PAI Sovereign OS" in prompt_mail
+
