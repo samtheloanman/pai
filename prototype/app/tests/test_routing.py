@@ -116,6 +116,16 @@ def test_model_decide_valid_json(monkeypatch):
     assert run(main.decide("check my inbox")) == ("email", 0.9)
 
 
+def test_model_decide_markdown_json(monkeypatch):
+    _decide_with(monkeypatch, _reply('```json\n{\n  "route": "email",\n  "p": 0.9\n}\n```'))
+    assert run(main.decide("check my inbox")) == ("email", 0.9)
+
+
+def test_model_decide_surrounding_text_json(monkeypatch):
+    _decide_with(monkeypatch, _reply('Here is the decision:\n```json\n{"route": "calendar", "p": 0.8}\n```\nDone.'))
+    assert run(main.decide("what is tomorrow")) == ("calendar", 0.8)
+
+
 @pytest.mark.parametrize("content", ["not json at all", '{"route": "launch_missiles", "p": 1}', '{"route": "email"}'])
 def test_model_decide_bad_output_is_chat(monkeypatch, content):
     _decide_with(monkeypatch, _reply(content))

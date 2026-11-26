@@ -5,7 +5,7 @@ services:
     image: ollama/ollama:latest
     container_name: pai-ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
@@ -19,14 +19,14 @@ services:
       - "8088:8088"
     environment:
       - PORT=8088
-      - LITELLM_URL=http://ollama:11434
-      - CHAT_MODEL=gemma3:4b
-      - DECIDE_MODEL=gemma3:4b
+      - LITELLM_URL=${LITELLM_URL:-http://ollama:11434}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
+      - CHAT_MODEL=${CHAT_MODEL:-gemma3:4b}
+      - DECIDE_MODEL=${DECIDE_MODEL:-gemma3:4b}
       - DATA_DIR=/data
+      - PAI_VAULT_KEY=${PAI_VAULT_KEY:-18ca26418558ea06e8859fa79967800c82f717c1198f0d48bb856df335d02036}
     volumes:
       - pai_data:/data
-    depends_on:
-      - ollama
     restart: unless-stopped
 
 volumes:

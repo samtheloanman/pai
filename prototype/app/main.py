@@ -112,6 +112,10 @@ def _base_v1() -> str:
     return base if base.endswith("/v1") else f"{base}/v1"
 
 
+def _auth_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {LITELLM_KEY}"} if LITELLM_KEY else {}
+
+
 def audit_model(model: str, t0: float, ok: bool, **extra) -> None:
     audited("model_call", **{"gen_ai.request.model": model}, duration_ms=int((time.monotonic() - t0) * 1000), success=ok, **extra)
 
@@ -123,7 +127,7 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
         async with httpx.AsyncClient(timeout=300) as c:
             r = await c.post(
                 f"{_base_v1()}/chat/completions",
-                headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+                headers=_auth_headers(),
                 json={"model": model, "messages": messages, "temperature": temperature},
             )
     except httpx.HTTPError as e:
@@ -145,13 +149,29 @@ async def llm(messages: list[dict], model: str | None = None, temperature: float
     return out
 
 
+def _extract_json(text: str) -> dict:
+    s = text.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\s*```$", "", s)
+        s = s.strip()
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(s[start : end + 1])
+        raise
+
+
 async def decide(text: str) -> tuple[str, float]:
     """Tier-3 router: ask the decision model for {"route", "p"}. Raises on any bad answer; routing maps that to chat."""
     out = await llm([
         {"role": "system", "content": f'Classify the owner\'s request into exactly one route from {list(routing.ROUTES)}. Reply with JSON only: {{"route": "<route>", "p": <0..1>}}'},
         {"role": "user", "content": text[: routing.MAX_CHARS]},
     ], model=DECIDE_MODEL, temperature=0)
-    d = json.loads(out)
+    d = _extract_json(out)
     if d["route"] not in routing.ROUTES:
         raise ValueError(f"unknown route {d['route']!r}")
     return d["route"], min(1.0, max(0.0, float(d["p"])))
@@ -488,7 +508,7 @@ async def transcribe_bytes(c: httpx.AsyncClient, data: bytes, name: str, ctype: 
     try:
         t = await c.post(
             f"{_base_v1()}/audio/transcriptions",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            headers=_auth_headers(),
             data={"model": STT_MODEL},
             files={"file": (name, data, ctype)},
         )
@@ -505,8 +525,8 @@ async def synthesize(c: httpx.AsyncClient, text: str):
     t0 = time.monotonic()
     try:
         s = await c.post(
-            f"{LITELLM_URL}/v1/audio/speech",
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            f"{_base_v1()}/audio/speech",
+            headers=_auth_headers(),
             json={"model": TTS_MODEL, "input": text[:1500], "voice": TTS_VOICE, "response_format": "mp3"},
         )
     except httpx.HTTPError as e:

@@ -42,7 +42,7 @@
 **Interfaces:**
 - Produces: `SCHEMA_VERSION: int = 2`; `class SchemaTooNew(Exception)`; `connect(path: str, key: str | None = None) -> sqlite3.Connection` (applies migrations up to `SCHEMA_VERSION`, raises `SchemaTooNew` if the file's `user_version` is higher); `MIGRATIONS: list[str]` (index = version - 1).
 
-- [ ] **Step 1: Failing tests** in `tests/test_store.py`:
+- [x] **Step 1: Failing tests** in `tests/test_store.py`:
 
 ```python
 def test_fresh_db_is_at_current_version(tmp_path):
@@ -60,10 +60,10 @@ def test_migrations_are_additive_only():
         assert not re.search(r"\b(drop|rename)\b", sql, re.I)
 ```
 
-- [ ] **Step 2:** `pytest tests/test_store.py -q` → FAIL (module missing).
-- [ ] **Step 3:** Implement `store.py`. Version 1 = the existing `profile`, `memories`, `rules` tables. Version 2 adds `memories_fts` (FTS5 over `memories.text`, kept in sync by triggers) and `actions`, `providers` tables (columns defined in Tasks 5 and 6; create them here).
-- [ ] **Step 4:** All tests (old + new) pass: `pytest -q` → 13+ passed.
-- [ ] **Step 5:** Commit `refactor: pai package with versioned additive migrations`.
+- [x] **Step 2:** `pytest tests/test_store.py -q` → FAIL (module missing).
+- [x] **Step 3:** Implement `store.py`. Version 1 = the existing `profile`, `memories`, `rules` tables. Version 2 adds `memories_fts` (FTS5 over `memories.text`, kept in sync by triggers) and `actions`, `providers` tables (columns defined in Tasks 5 and 6; create them here).
+- [x] **Step 4:** All tests (old + new) pass: `pytest -q` → 13+ passed.
+- [x] **Step 5:** Commit `refactor: pai package with versioned additive migrations`.
 
 ### Task 2: Encrypted vault and hybrid search (VAULT-1)
 
@@ -76,7 +76,7 @@ def test_migrations_are_additive_only():
 - Consumes: `store.connect(path, key)`.
 - Produces: `class VaultKeyError(Exception)`; `search(con, query: str, limit: int = 5, embed: Callable[[str], list[float]] | None = None) -> list[str]` (FTS5 BM25 results merged with vector results when `embed` is given, reciprocal-rank fusion, de-duplicated); `add_memory(con, text: str, embed=None) -> int`.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
 
 ```python
 def test_file_is_unreadable_without_key(tmp_path):
@@ -104,10 +104,10 @@ def test_hybrid_merges_vector_hits(tmp_path):
     assert vault.search(con, "tooth pain", embed=fake)[0] == "dentist on Fridays"
 ```
 
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement. SQLCipher: `PRAGMA key` then a probe read; translate `DatabaseError: file is not a database` into `VaultKeyError`. Vectors in a sqlite-vec `vec0` table keyed by memory id. App startup fails fast with the `VaultKeyError` message when `PAI_VAULT_KEY` is wrong.
-- [ ] **Step 4:** `pytest -q` → all pass; `docker compose --profile local up -d --build app` and `curl -s localhost:8088/api/health` → `{"ok":true}`.
-- [ ] **Step 5:** Commit `feat: SQLCipher vault with FTS5 + vector hybrid search`.
+- [x] **Step 2:** Run → FAIL.
+- [x] **Step 3:** Implement. SQLCipher: `PRAGMA key` then a probe read; translate `DatabaseError: file is not a database` into `VaultKeyError`. Vectors in a sqlite-vec `vec0` table keyed by memory id. App startup fails fast with the `VaultKeyError` message when `PAI_VAULT_KEY` is wrong.
+- [x] **Step 4:** `pytest -q` → all pass; `docker compose --profile local up -d --build app` and `curl -s localhost:8088/api/health` → `{"ok":true}`.
+- [x] **Step 5:** Commit `feat: SQLCipher vault with FTS5 + vector hybrid search`.
 
 ### Task 3: Tiered routing (ROUTE-4, ROUTE-6)
 
@@ -119,7 +119,7 @@ def test_hybrid_merges_vector_hits(tmp_path):
 **Interfaces:**
 - Produces: `ROUTES = ("remember", "memory_query", "calendar", "email", "action", "chat")`; `@dataclass Route(name: str, tier: int, score: float)` (tier 1 rules, 2 embedding, 3 model); `async def route(text: str, embed=None, decide=None) -> Route`; `EMBED_THRESHOLD = 0.55` (initial, tuned by the bench); `MAX_CHARS = 4000`; `embed.embed(text: str) -> list[float]` (fastembed `sentence-transformers/all-MiniLM-L6-v2`, model cached under `DATA_DIR/models`).
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
 
 ```python
 async def test_rule_tier_catches_remember():
@@ -142,10 +142,10 @@ async def test_long_input_is_truncated():
     assert max(seen) <= routing.MAX_CHARS
 ```
 
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement. Tier 2 compares against 3–5 example phrases per route (cosine); tier 3 calls LiteLLM model `pai-decide` with a prompt that must return JSON `{"route": <one of ROUTES>, "p": <0..1>}`; invalid JSON → `Route("chat", 3, 0.0)`.
-- [ ] **Step 4:** `pytest -q` → pass. Then `python bench/route_bench.py --base http://localhost:8088` prints accuracy per tier and p50/p95 added latency; save output to `bench/results/route-<date>.json`. No accuracy target yet (ROUTE-6 sets it from this run).
-- [ ] **Step 5:** Commit `feat: tiered routing (rules, embeddings, decision model) + route bench`.
+- [x] **Step 2:** Run → FAIL.
+- [x] **Step 3:** Implement. Tier 2 compares against 3–5 example phrases per route (cosine); tier 3 calls LiteLLM model `pai-decide` with a prompt that must return JSON `{"route": <one of ROUTES>, "p": <0..1>}`; invalid JSON → `Route("chat", 3, 0.0)`.
+- [x] **Step 4:** `pytest -q` → pass. Then `python bench/route_bench.py --base http://localhost:8088` prints accuracy per tier and p50/p95 added latency; save output to `bench/results/route-<date>.json`. No accuracy target yet (ROUTE-6 sets it from this run).
+- [x] **Step 5:** Commit `feat: tiered routing (rules, embeddings, decision model) + route bench`.
 
 ### Task 4: Audit trail (AUD-1, AUD-2, AUD-3, AUD-5)
 
@@ -157,7 +157,7 @@ async def test_long_input_is_truncated():
 **Interfaces:**
 - Produces: `record(kind: str, **fields) -> int` (kinds: `model_call`, `route`, `action_proposed`, `action_confirmed`, `action_rejected`, `memory_added`, `memory_deleted`, `outbound`, `config_changed`); `verify() -> int | None` (id of first broken entry, `None` if intact); `entries(limit: int = 100, kind: str | None = None) -> list[dict]`. Stored in `DATA_DIR/audit.db` (SQLCipher, same key). Field names: `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `duration_ms`, `pai.route`, `pai.provider`.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
 
 ```python
 def test_chain_verifies_and_detects_edits(audit_db):
@@ -178,10 +178,10 @@ def test_concurrent_writes_keep_chain(audit_db):
 def test_chat_call_writes_one_model_call_entry(client, mock_litellm): ...
 ```
 
-- [ ] **Step 2:** Run → FAIL.
-- [ ] **Step 3:** Implement: each row stores `id, ts, kind, fields (json), prev_hash, hash = sha256(prev_hash + ts + kind + fields)`; writes serialized with a process lock and `BEGIN IMMEDIATE`. Content fields (`prompt`, `reply`, `text`) are dropped unless `AUDIT_CONTENT=1`. Add `GET /api/activity?kind=` and `GET /api/activity/verify`.
-- [ ] **Step 4:** `pytest -q` → pass.
-- [ ] **Step 5:** Commit `feat: hash-chained audit trail and activity API`.
+- [x] **Step 2:** Run → FAIL.
+- [x] **Step 3:** Implement: each row stores `id, ts, kind, fields (json), prev_hash, hash = sha256(prev_hash + ts + kind + fields)`; writes serialized with a process lock and `BEGIN IMMEDIATE`. Content fields (`prompt`, `reply`, `text`) are dropped unless `AUDIT_CONTENT=1`. Add `GET /api/activity?kind=` and `GET /api/activity/verify`.
+- [x] **Step 4:** `pytest -q` → pass.
+- [x] **Step 5:** Commit `feat: hash-chained audit trail and activity API`.
 
 ### Task 5: Confirm gate for risky actions (ROUTE-5, APP-12)
 
@@ -194,7 +194,7 @@ def test_chat_call_writes_one_model_call_entry(client, mock_litellm): ...
 - Consumes: `audit.record`.
 - Produces: `RISKY = {"send", "delete", "spend", "system"}`; `propose(kind: str, summary: str, payload: dict, ttl_s: int = 900) -> str` (id); `confirm(action_id: str, executor: Callable[[dict], Any]) -> dict` (runs executor at most once; `{"status": "done" | "expired" | "already_done" | "rejected"}`); `reject(action_id: str) -> None`; `pending() -> list[dict]`. Endpoints: `GET /api/actions`, `POST /api/actions/{id}/confirm`, `POST /api/actions/{id}/reject`. MVP executor registry has one safe built-in: `delete_memory`.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
 
 ```python
 def test_risky_action_does_not_run_on_propose():
@@ -215,8 +215,8 @@ def test_confirm_is_idempotent_and_expires(monkeypatch):
 def test_confirm_and_reject_are_audited(): ...
 ```
 
-- [ ] **Step 2:** Run → FAIL. **Step 3:** Implement on the `actions` table from Task 1. **Step 4:** `pytest -q` → pass.
-- [ ] **Step 5:** Commit `feat: confirm gate for risky actions`.
+- [x] **Step 2:** Run → FAIL. **Step 3:** Implement on the `actions` table from Task 1. **Step 4:** `pytest -q` → pass.
+- [x] **Step 5:** Commit `feat: confirm gate for risky actions`.
 
 ### Task 6: Providers, cloud opt-in and hard blocks (ROUTE-2, ROUTE-3, PRIV-1, PRIV-3, PRIV-4, PRIV-5)
 
@@ -228,7 +228,7 @@ def test_confirm_and_reject_are_audited(): ...
 **Interfaces:**
 - Produces: `PROVIDERS = {"openrouter": "openrouter/", "huggingface": "huggingface/", "nvidia": "nvidia_nim/", "ollama": "ollama/", "lmstudio": "lm_studio/"}`; `save_key(name: str, key: str) -> None` (stored in the encrypted vault `providers` table); `set_cloud_enabled(on: bool) -> None`; `render_litellm_config() -> str` (YAML; cloud entries only for providers with a key); `choose_model(text: str, route: Route, want_cloud: bool = False) -> str` returns `"pai-chat"` unless `want_cloud` AND cloud enabled AND `blocks.allowed_for_cloud(text, off_limits)[0]`; `blocks.allowed_for_cloud(text: str, off_limits: list[str]) -> tuple[bool, str]` (reason). Blocks: API-key patterns (`sk-`, `ghp_`, `AKIA`, generic 32+ char hex/base64 tokens), Luhn-valid 13–19 digit numbers, US SSN pattern, and any off-limits phrase from the profile. Every cloud call → `audit.record("outbound", **{"pai.provider": ..., "chars": len(text)})`.
 
-- [ ] **Step 1: Failing tests:**
+- [x] **Step 1: Failing tests:**
 
 ```python
 def test_key_without_switch_stays_local(vault):
@@ -250,8 +250,8 @@ def test_rendered_config_has_only_keyed_providers(vault):
     assert "nvapi-test" not in providers.render_litellm_config()  # key passed via env reference, never inlined
 ```
 
-- [ ] **Step 2:** Run → FAIL. **Step 3:** Implement. Keys reach LiteLLM through environment variables written to a 0600 env file, never inlined in YAML. **Step 4:** `pytest -q` → pass.
-- [ ] **Step 5:** Commit `feat: opt-in cloud providers with hard blocks and outbound audit`.
+- [x] **Step 2:** Run → FAIL. **Step 3:** Implement. Keys reach LiteLLM through environment variables written to a 0600 env file, never inlined in YAML. **Step 4:** `pytest -q` → pass.
+- [x] **Step 5:** Commit `feat: opt-in cloud providers with hard blocks and outbound audit`.
 
 ### Task 7: Front end: Activity, Approvals, Providers (AUD-4, PRIV-1)
 
@@ -263,9 +263,9 @@ def test_rendered_config_has_only_keyed_providers(vault):
 - Consumes: `/api/activity`, `/api/activity/verify`, `/api/actions*`, `/api/providers` (GET list without keys, PUT `{name, key}`, PUT `{cloud_enabled}`).
 - Produces: `format.activityLine(entry) -> string` (e.g. `"Model call · pai-chat · 312 tokens"`, `"Sent to openrouter · 1,204 chars"`), `format.riskLabel(kind) -> "Sends" | "Deletes" | "Spends" | "Changes system"`.
 
-- [ ] **Step 1: Failing tests** in `format.test.js` for `activityLine` on each audit kind and `riskLabel` on each risky kind.
-- [ ] **Step 2:** `npm test` → FAIL. **Step 3:** Implement components; Providers page shows the warning "Cloud models see what you send. Names and secrets are blocked or kept on this box." and never displays a stored key. **Step 4:** `npm test` → pass; `npx vite build` → success.
-- [ ] **Step 5:** Browser check at `localhost:8088`: confirm a pending `delete_memory`, see it in Activity, see "Chain intact". Commit `feat: activity, approvals and providers views`.
+- [x] **Step 1: Failing tests** in `format.test.js` for `activityLine` on each audit kind and `riskLabel` on each risky kind.
+- [x] **Step 2:** `npm test` → FAIL. **Step 3:** Implement components; Providers page shows the warning "Cloud models see what you send. Names and secrets are blocked or kept on this box." and never displays a stored key. **Step 4:** `npm test` → pass; `npx vite build` → success.
+- [x] **Step 5:** Browser check at `localhost:8088`: confirm a pending `delete_memory`, see it in Activity, see "Chain intact". Commit `feat: activity, approvals and providers views`.
 
 ### Task 8: End-to-end check and docs
 
@@ -273,6 +273,6 @@ def test_rendered_config_has_only_keyed_providers(vault):
 - Modify: `prototype/README.md` (vault key, providers, approvals, activity, bench), `docs/COORDINATION-SUMMARY.md` (status)
 - Create: `prototype/app/tests/test_e2e.py` (marked `e2e`, skipped unless `PAI_E2E=1`)
 
-- [ ] **Step 1:** `test_e2e.py` against the running stack: interview → rules draft → chat → "remember X" → search finds X → propose delete → confirm → memory gone → `/api/activity/verify` returns intact → no `outbound` entries with cloud off.
-- [ ] **Step 2:** `docker compose --profile local up -d --build && PAI_E2E=1 .venv/bin/pytest -q -m e2e` → pass.
-- [ ] **Step 3:** Update README; commit `test: MVP end-to-end check; docs`.
+- [x] **Step 1:** `test_e2e.py` against the running stack: interview → rules draft → chat → "remember X" → search finds X → propose delete → confirm → memory gone → `/api/activity/verify` returns intact → no `outbound` entries with cloud off.
+- [x] **Step 2:** `docker compose --profile local up -d --build && PAI_E2E=1 .venv/bin/pytest -q -m e2e` → pass.
+- [x] **Step 3:** Update README; commit `test: MVP end-to-end check; docs`.
