@@ -35,14 +35,42 @@ def audit_db(tmp_path, monkeypatch):
     return audit
 
 
+@pytest.fixture(autouse=True)
+def fast_auth(monkeypatch):
+    """Cheap Argon2 parameters and fresh login throttles per test. Production parameters live in pai/auth.py."""
+    from argon2 import PasswordHasher
+    from pai import auth
+    monkeypatch.setattr(auth, "HASHER", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1))
+    auth.reset_throttles()
+
+
 @pytest.fixture
-def client(audit_db):
+def anon(audit_db):
+    """A client with no login, on an empty vault with no owner."""
     from fastapi.testclient import TestClient
     import main
     path = os.path.join(main.DATA_DIR, "pai.db")
     if os.path.exists(path):
         os.remove(path)  # each test starts with an empty vault
     return TestClient(main.app)
+
+
+PASS = "correct horse battery staple"
+
+
+def sign_in(c):
+    """Sign a client in on whatever vault DATA_DIR points at now (creates the owner on an empty vault)."""
+    c.cookies.clear()
+    path = "/api/auth/login" if c.get("/api/auth/status").json()["owner"] else "/api/auth/setup"
+    r = c.post(path, json={"passphrase": PASS})
+    assert r.status_code == 200, r.text
+    return c
+
+
+@pytest.fixture
+def client(anon):
+    """Signed in as the owner (the session cookie stays on this client)."""
+    return sign_in(anon)
 
 
 class _Resp:

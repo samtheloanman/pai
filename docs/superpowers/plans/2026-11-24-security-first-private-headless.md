@@ -41,15 +41,18 @@ Done 2026-11-25 on `claude/phase0-security-fixes`. LiteLLM is pinned to v1.108.1
 
 Blocks every later phase that exposes the app.
 
-- [ ] First-boot creates one owner; passphrase hashed with Argon2id; no default password.
-- [ ] Session cookie: HttpOnly, SameSite=Strict, Secure when served over TLS; server-side session table with expiry and revoke.
-- [ ] Per-device tokens: one-time pairing code, stored hashed, listed and revocable on a Devices page.
-- [ ] Every `/api/*` route except health and first-boot requires a session or device token. Test: each route returns 401 without one.
-- [ ] Login, logout, pairing and revoke write to the audit chain.
-- [ ] Rate-limit login and pairing attempts.
+- [x] First-boot creates one owner; passphrase hashed with Argon2id; no default password.
+- [x] Session cookie: HttpOnly, SameSite=Strict, Secure when served over TLS; server-side session table with expiry and revoke.
+- [x] Per-device tokens: one-time pairing code, stored hashed, listed and revocable on a Devices page.
+- [x] Every `/api/*` route except health and first-boot requires a session or device token. Test: each route returns 401 without one.
+- [x] Login, logout, pairing and revoke write to the audit chain.
+- [x] Rate-limit login and pairing attempts.
+
+Done 2026-11-25 on `claude/phase1-owner-login`. Also: cross-site writes with the cookie are refused; CORS allows only the Capacitor app origins (`capacitor://localhost`, `https://localhost`) with a bearer token; `setup-pai-vpn-gateway.sh serve` waits until the owner passphrase exists. Not done: passphrase change, "sign out everywhere", per-device permissions (a paired device has the owner's full rights).
 
 ### Phase 2: private network, installable web app, QR pairing (was item 3)
 
+- [ ] Capacitor wrapper (owner decision 2026-11-25): ships the built web app, asks for the box address on first launch, pairs with a code, keeps the device token in the platform keystore and sends it as a bearer token.
 - [ ] Web app manifest and service worker so it installs on a phone home screen (APP-1). State on 2026-11-25: a minimal manifest exists (`prototype/app/static/manifest.json`: name, colours, standalone) with no icons and no service worker, so phones will not offer to install it. No native app exists; `docs/superpowers/specs/2026-11-08-mobile-direction.md` recommends a Capacitor wrapper and is still marked decision pending. Its second open question (Tailscale as the default path) is now answered: yes.
 - [ ] Publish the app on the overlay interface only (`tailscale serve`); never on the LAN or WAN interface.
 - [ ] Pairing page shows a QR code holding the tailnet URL and a one-time device code from Phase 1 (APP-2).
@@ -93,7 +96,7 @@ Owner decision 2026-11-25: automation hubs and a mail front end ship out of the 
 - [ ] Hub connectors: Composio, Zapier, Make (cloud services) and n8n (self-hosted). One adapter interface; each exposes its actions to the router as tools. Every write goes through the confirm gate and the audit log.
 - [ ] Privacy level per hub on the Connectors page: n8n on the box = local; Composio, Zapier and Make = cloud (the service sees the data and holds the account tokens). Their hosts are added to the outbound allowlist only while the hub is connected; block-list and masking rules apply to what is sent.
 - [ ] n8n: its licence is not open source (GitHub reports no SPDX id; read the Sustainable Use License before shipping it inside a sold box). Safe default: connect to an n8n the owner runs, do not bundle it.
-- [ ] Mail front end on local models: evaluate Mail-0/Zero (MIT, active 2026-11) and elie222/inbox-zero (active 2026-11; licence has no SPDX id, read it first). Point the chosen one's model setting at PAI's LiteLLM address so triage and drafting run on the box. Run a skillspector-style review and pin by digest before adding either.
+- [ ] Mail front end on local models: Mail-0/Zero chosen by the owner 2026-11-25 (inbox-zero dropped). Earlier comparison: Mail-0/Zero (MIT, active 2026-11) and elie222/inbox-zero (active 2026-11; licence has no SPDX id, read it first). Point the chosen one's model setting at PAI's LiteLLM address so triage and drafting run on the box. Run a skillspector-style review and pin by digest before adding either.
 - [ ] Both mail projects are built around Gmail and Outlook OAuth; confirm each works against plain IMAP before choosing, or keep the in-process `imapclient` path for other mailboxes.
 
 ### Phase 7: benchmarks (was item 10)
@@ -122,6 +125,11 @@ Owner decision 2026-11-25: automation hubs and a mail front end ship out of the 
 - [ ] Owner decision 2026-11-25: $3,000 = 64 GB, $5,000 = 128 GB. Part costs on 2026-10-31: 64 GB $1,753; 128 GB Pro $3,919; 32 GB box $829 to $1,133. Still a proposal, not yet confirmed: $500 = 16 GB entry box on a cheaper chassis than the current Starter; $1,000 = 32 GB Starter. Upgrades: memory, storage, GPU dock, second box.
 
 ### Later
+
+- Mesh options proposed by the owner 2026-11-25, all off by default, each needs its own design before code:
+  - Share idle compute with the owner's own boxes (llama.cpp RPC over the private network, AC power and idle only). Only between boxes the owner owns: an RPC worker sees prompts in clear, and llama.cpp RPC has no authentication of its own.
+  - UTP token rewards for serving inference to others. Serving strangers' prompts conflicts with "data stays on the box"; needs a separate privacy review and a legal check before any token payout.
+  - Guest Wi-Fi sharing. Needs PAI to be the router (OpenWrt), which PRD LAN-2 leaves open; never on the PAI box's own network.
 
 - Chat channels (was item 4): Hermes Agent as a relay with all toolsets off, no vault key, bridge network, one allowlisted user. Add a thin `/v1/chat/completions` route over `reply_to()` so the router, confirm gate and audit log stay the only authority. Signal or Matrix with encryption required. Confirmations stay in the web app.
 - Computer control (was item 5): one sandbox image (rootless Podman, read-only, capabilities dropped, pid, memory and CPU limits, no Docker socket), KasmVNC viewer on the overlay interface only, every action through the confirm gate. Owner decision 2026-11-25: both the owner's own shell and the assistant acting on the desktop. The owner prefers Rakazo (already run in the fleet as a browser sandbox appliance) as the remote desktop; vet it first (licence, upstream health, whether it can sit behind PAI's confirm gate and audit log) and fall back to the sandbox-plus-KasmVNC design if it fails.

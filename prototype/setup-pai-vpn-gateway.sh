@@ -81,10 +81,14 @@ cmd_up() {
   echo "Joined the private network as '$HOSTNAME_TS'. Next: '$0 serve' publishes the PAI app to it."
 }
 
-app_has_login() {  # true when a data route refuses an anonymous request
+app_has_login() {  # true when data routes refuse anonymous requests
   local code
   code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "http://127.0.0.1:$PORT/api/memories" || true)"
   [[ "$code" == "401" || "$code" == "403" ]]
+}
+
+owner_exists() {  # true once the owner passphrase has been created; until then anyone who reaches the app could claim it
+  curl -s -m 5 "http://127.0.0.1:$PORT/api/auth/status" | grep -q '"owner":true'
 }
 
 cmd_serve() {
@@ -93,6 +97,9 @@ cmd_serve() {
     curl -s -o /dev/null -m 5 "http://127.0.0.1:$PORT/api/health" || die "the PAI app is not answering on 127.0.0.1:$PORT"
     if ! app_has_login && [[ "${PAI_SERVE_WITHOUT_LOGIN:-0}" != "1" ]]; then
       die "the PAI app has no login yet, so every device on your private network could read and change it. Not published. To publish anyway, set PAI_SERVE_WITHOUT_LOGIN=1."
+    fi
+    if app_has_login && ! owner_exists; then
+      die "no owner passphrase yet: the first device to open the app would become its owner. Open http://127.0.0.1:$PORT on this box, create the passphrase, then run this again."
     fi
   fi
   run tailscale funnel reset

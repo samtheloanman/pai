@@ -24,6 +24,8 @@ def cloud_requests():
 
 def test_full_flow():
     c = httpx.Client(base_url=BASE, timeout=60)
+    assert c.get("/api/memories").status_code == 401  # nothing is reachable before the owner exists
+    assert c.post("/api/auth/setup", json={"passphrase": "e2e owner passphrase"}).status_code == 200
 
     def chat(message, history=(), **kw):
         r = c.post("/api/chat", json={"message": message, "history": list(history), **kw})

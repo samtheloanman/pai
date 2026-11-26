@@ -10,7 +10,7 @@ Runs the PAI software on a laptop or a cloud VM: setup interview, chat with loca
 | `egress` | Allowlist proxy: LiteLLM's only way out; forwards to the provider hosts you turned on and nothing else | `ubuntu/squid`, pinned by digest |
 | `app` | PAI web app: FastAPI back end + React chat front end (assistant-ui, Geist font), encrypted SQLite (SQLCipher) vault in the `data` volume | built from `app/Dockerfile` (builds `web/` first) |
 
-Prototype only: images are pinned by digest and LiteLLM can reach only the provider hosts you turn on, but there is no login on the app, no A/B updates. See Known limits.
+Prototype only: images are pinned by digest and LiteLLM can reach only the provider hosts you turn on, with an owner login; no A/B updates yet. See Known limits.
 
 ## Run on a laptop (32-64 GB)
 
@@ -69,7 +69,7 @@ Same commands on any Linux VM with Docker (8+ GB RAM for the 4B model, 32+ GB fo
 ssh -L 8088:localhost:8088 user@vm
 ```
 
-or by installing Tailscale on the VM and changing the port binding to the VM's Tailscale IP. Do not publish port 8088 on a public interface: the prototype has no login.
+or by installing Tailscale on the VM and changing the port binding to the VM's Tailscale IP. Do not publish port 8088 on a public interface.
 
 ## Use it
 
@@ -106,7 +106,7 @@ Compose names the project after the folder, so a second checkout can collide wit
 
 ## Known limits
 
-- No login. Anyone who can reach the port can read memories and confirm actions: keep it on localhost or a private network.
+- One owner, no other user accounts. Paired devices have the owner's full rights. No passphrase reset: a forgotten passphrase means a new vault.
 - A provider key is stored in plaintext in the shared env file (mode 0600) that LiteLLM reads.
 - The embedding model downloads on first use; until then (or if it fails) search uses keywords only.
 - `restart_required` stays set until the owner clears it; the app cannot tell whether LiteLLM was restarted.

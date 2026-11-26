@@ -134,3 +134,8 @@ def test_teardown_leaves_packet_forwarding_alone(tmp_path):
     assert "ip_forward" not in r.stdout and "forwarding" not in r.stdout
     assert "rm -f /etc/sysctl.d/99-pai-vpn.conf" in r.stdout
     assert not re.search(r"sysctl\s+-w", code_lines(SETUP))
+
+
+def test_serve_refuses_until_the_owner_exists():
+    code = code_lines(SETUP)
+    assert "/api/auth/status" in code and 'owner_exists' in code.split("cmd_serve()")[1]

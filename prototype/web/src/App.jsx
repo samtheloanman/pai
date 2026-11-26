@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Activity } from './Activity.jsx'
 import { api } from './api.js'
 import { Approvals } from './Approvals.jsx'
+import { Devices } from './Auth.jsx'
 import { Chat } from './Chat.jsx'
 import { Memory, Rules, Setup } from './Panels.jsx'
 import { Providers } from './Providers.jsx'
@@ -16,6 +17,7 @@ const TABS = [
   ['memory', 'Memory'],
   ['rules', 'Rules'],
   ['providers', 'Runtime'],
+  ['devices', 'Devices'],
 ]
 
 export function RakazoWorkspace({ actions, reload }) {
@@ -379,6 +381,7 @@ export function App() {
         {tab === 'rules' && <Rules />}
         {tab === 'memory' && <Memory />}
         {tab === 'providers' && <Providers />}
+        {tab === 'devices' && <Devices />}
       </main>
     </div>
   )

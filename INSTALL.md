@@ -144,7 +144,7 @@ Tell the owner:
 
 1. Open `http://localhost:8088`. Answer the 8 setup questions by typing or with the Speak button, then press "Draft my rules".
 2. Back up the vault key somewhere other than this computer. Without it the vault cannot be opened.
-3. PAI has no login yet: anyone who can reach port 8088 can read memories and confirm actions. Keep it on this computer or a private network. Do not publish the port.
+3. On first open, create the owner passphrase. Until you do, the first person to open the app becomes its owner, so do this before you publish it anywhere. Do not publish the port to the internet.
 4. Cloud providers are off. They are optional, and turning one on sends the text of a message off this computer. Keys are entered in the app under Providers.
 
 ## Day-to-day
@@ -175,7 +175,7 @@ To remove PAI but keep the vault: stop the stack and delete nothing else. To rem
 
 ## Known limits
 
-- Prototype: no login, no signed or A/B updates. Images are pinned by digest.
+- Prototype: no signed or A/B updates. Images are pinned by digest.
 - No speed or accuracy numbers have been measured yet.
 - Voice, memory, rules and the activity log work on this computer. Channels such as Telegram and email, and a hardware OS image, are not built.
 

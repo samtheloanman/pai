@@ -15,6 +15,8 @@ def fresh_db():
     path = os.path.join(main.DATA_DIR, "pai.db")
     if os.path.exists(path):
         os.remove(path)
+    client.cookies.clear()
+    assert client.post("/api/auth/setup", json={"passphrase": "correct horse battery staple"}).status_code == 200
 
 
 def test_interview_walks_every_question_then_finishes():

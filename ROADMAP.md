@@ -30,7 +30,7 @@ Goal: a fresh machine goes from power-on to a useful local assistant without a t
 | Database-safe updates and pre-update backup | OS-10 | Next |
 | Factory reset back to first boot | OS-12 | Next |
 | Ansible playbook for dev boxes | OS-9 | Next |
-| No login → owner login and session handling | — | Next |
+| No login → owner login and session handling | — | In progress (PR, plan Phase 1) |
 
 ## Later (2027)
 

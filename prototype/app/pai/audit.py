@@ -25,7 +25,9 @@ from contextlib import closing
 from pai import store, vaultkey
 
 KINDS = {"model_call", "route", "action_proposed", "action_confirmed", "action_rejected",
-         "memory_added", "memory_deleted", "outbound", "config_changed"}
+         "memory_added", "memory_deleted", "outbound", "config_changed",
+         "owner_created", "auth_login", "auth_login_failed", "auth_logout", "auth_locked",
+         "device_pairing_started", "device_paired", "device_pair_failed", "device_revoked"}
 CONTENT_FIELDS = {"prompt", "reply", "text", "answer"}
 MAX_LIMIT = 500
 ZERO = "0" * 64

@@ -9,6 +9,20 @@ import main
 from pai import routing, vault
 
 client = TestClient(main.app)
+PASS = "correct horse battery staple"
+
+
+def sign_in():
+    client.cookies.clear()
+    if client.get("/api/auth/status").json()["owner"]:
+        assert client.post("/api/auth/login", json={"passphrase": PASS}).status_code == 200
+    else:
+        assert client.post("/api/auth/setup", json={"passphrase": PASS}).status_code == 200
+
+
+@pytest.fixture(autouse=True)
+def _signed_in():
+    sign_in()
 
 
 def run(coro):
@@ -156,6 +170,7 @@ def test_forget_message_deletes_nothing():
     path = os.path.join(main.DATA_DIR, "pai.db")
     if os.path.exists(path):
         os.remove(path)
+    sign_in()
     with closing(main.db()) as con:
         mid = vault.add_memory(con, "keep me")
     r = client.post("/api/chat", json={"message": f"forget memory {mid}"}).json()
