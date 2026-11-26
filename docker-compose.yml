@@ -24,9 +24,13 @@ services:
       - CHAT_MODEL=${CHAT_MODEL:-gemma3:4b}
       - DECIDE_MODEL=${DECIDE_MODEL:-gemma3:4b}
       - DATA_DIR=/data
-      - PAI_VAULT_KEY=${PAI_VAULT_KEY:?run ./run.sh once: it creates your own vault key in .env}
+      - "PAI_VAULT_KEY=${PAI_VAULT_KEY:?run ./run.sh once, it creates your own vault key in .env}"
     volumes:
       - pai_data:/data
+    depends_on:  # start the bundled Ollama first; not required, so a remote LITELLM_URL still works
+      ollama:
+        condition: service_started
+        required: false
     restart: unless-stopped
 
 volumes:

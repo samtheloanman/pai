@@ -114,3 +114,18 @@ def test_network_facing_services_drop_privileges(name):
     svc = yaml.safe_load(COMPOSE[1].read_text())["services"][name]
     assert "no-new-privileges:true" in svc.get("security_opt", [])
     assert svc.get("cap_drop") == ["ALL"]
+
+
+def test_root_app_waits_for_local_ollama_but_does_not_require_it():
+    # LITELLM_URL defaults to the bundled Ollama, so start it first; required: false keeps a remote LITELLM_URL working.
+    app = services(COMPOSE[0])["pai-os"]
+    assert app["depends_on"] == {"ollama": {"condition": "service_started", "required": False}}
+
+
+@pytest.mark.parametrize("path", COMPOSE, ids=lambda p: str(p.relative_to(ROOT)))
+def test_environment_list_items_are_plain_strings(path):
+    # An unquoted "KEY=${X:?msg: more}" parses as a YAML map and Docker Compose refuses the whole file.
+    for name, svc in services(path).items():
+        env = svc.get("environment", [])
+        if isinstance(env, list):
+            assert all(isinstance(e, str) for e in env), (name, [e for e in env if not isinstance(e, str)])
