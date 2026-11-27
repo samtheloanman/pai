@@ -129,3 +129,14 @@ def test_environment_list_items_are_plain_strings(path):
         env = svc.get("environment", [])
         if isinstance(env, list):
             assert all(isinstance(e, str) for e in env), (name, [e for e in env if not isinstance(e, str)])
+
+
+def test_ci_runs_only_on_the_owners_runner_with_pinned_actions():
+    wf = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text())
+    for name, job in wf["jobs"].items():
+        assert job["runs-on"] == ["self-hosted", "pai-linux"], name
+        for step in job["steps"]:
+            if "uses" in step:
+                assert re.search(r"@[0-9a-f]{40}$", step["uses"]), step["uses"]
+    for v in wf["env"].values():
+        assert DIGEST.search(v), v

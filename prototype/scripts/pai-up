@@ -19,10 +19,11 @@ case "${1:-}" in
     have && { echo "A vault key is already in the Keychain; refusing to replace it." >&2; exit 1; }
     store "$k"; echo "Vault key imported to the Keychain ($SVC). You can now remove PAI_VAULT_KEY from .env." ;;
   *)
-    if have; then
-      PAI_VAULT_KEY="$(security find-generic-password -s "$SVC" -w)" exec docker compose "$@"
-    elif [ -n "${PAI_VAULT_KEY:-}" ]; then
+    # A key set explicitly in the environment wins, so every container in one session gets the same key.
+    if [ -n "${PAI_VAULT_KEY:-}" ]; then
       exec docker compose "$@"
+    elif have; then
+      PAI_VAULT_KEY="$(security find-generic-password -s "$SVC" -w)" exec docker compose "$@"
     elif [ -f .env ] && grep -q '^PAI_VAULT_KEY=[^[:space:]]' .env; then
       PAI_VAULT_KEY="$(grep '^PAI_VAULT_KEY=' .env | cut -d= -f2- | tr -d '[:space:]')" exec docker compose "$@"
     else

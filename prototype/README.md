@@ -49,6 +49,10 @@ scripts/pai-up --profile local up -d --build  # any docker compose arguments
 
 Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a key already in the Keychain.
 
+## Backups
+
+`scripts/pai-backup backup|verify|restore|export|import`. Full steps, including the vault key and upgrading: [../docs/BACKUP-AND-UPGRADE.md](../docs/BACKUP-AND-UPGRADE.md).
+
 ## Setup mode with OpenRouter (optional)
 
 Uses a free OpenRouter model for chat so setup works before a local model is downloaded. **The interview answers leave the machine** and free models may log prompts. Voice stays local.

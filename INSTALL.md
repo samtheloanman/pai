@@ -25,6 +25,7 @@ All of these are true. Run each check and read the output.
 - **Secrets:** never ask the owner to paste a key, password or token into the chat. Never print, echo or log a key. Generate keys with the commands below, which write them straight to a file or the OS keystore.
 - **No pipe-to-shell:** do not run `curl ... | sh` or `| bash`, here or anywhere. If a tool is missing, tell the owner and link the vendor's own download page.
 - **Ask first:** before installing Docker or any package, before using `sudo`, before changing a port, and before enabling any cloud provider. Cloud providers send message text off this computer; leave them off unless the owner asks, and let the owner type any provider key into the PAI app themselves.
+- **Back up:** see [docs/BACKUP-AND-UPGRADE.md](docs/BACKUP-AND-UPGRADE.md) for the vault key, backups, restore, export and import.
 - **Do not delete data:** never run `docker compose down -v`, `docker volume rm`, or delete `~/.config/pai`. These destroy the vault with no recovery.
 - **No interactive installers:** if a command opens a prompt or menu, stop and tell the owner; do not try to type into it.
 - **Two failures, then stop:** report the exact command, the exact error text, and what you checked.
