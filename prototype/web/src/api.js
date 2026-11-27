@@ -1,7 +1,11 @@
 // Plain fetch helpers for the PAI backend plus the adapter that feeds assistant-ui.
+export const SIGNED_OUT = 'pai:signed-out'
+
 export const api = async (path, opts = {}) => {
   const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts })
   const body = await r.json().catch(() => ({}))
+  // A data route answering 401 means the session ended (expired, revoked or signed out elsewhere).
+  if (r.status === 401 && !path.startsWith('/api/auth/')) window.dispatchEvent(new Event(SIGNED_OUT))
   if (!r.ok) throw new Error(body.detail || `Request failed (${r.status})`)
   return body
 }

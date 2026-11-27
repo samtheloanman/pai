@@ -12,7 +12,7 @@ We aim to reply within 3 working days and to agree a disclosure date with you. W
 
 ## Known limits today
 
-- The prototype has **no login**. Anyone who can reach port 8088 can read memories and confirm actions. It binds to `127.0.0.1`; keep it there or on a private network.
+- Owner login (Argon2id passphrase) and paired-device tokens guard every data route. The app binds to `127.0.0.1`; publish it only to a private network, after the owner passphrase exists.
 - Losing the vault key means losing the vault. There is no recovery.
 
 ## Scope

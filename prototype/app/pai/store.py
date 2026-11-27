@@ -94,6 +94,15 @@ MIGRATIONS: list[str] = [
            strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     from profile;
     """,
+    # v7: owner login, browser sessions, paired devices and one-time pairing codes (see pai/auth.py)
+    """
+    create table owner (id integer primary key check (id = 1), pass_hash text not null, created real not null);
+    create table devices (id text primary key, name text not null, created real not null, last_seen real);
+    create table auth_tokens (token_hash text primary key, device_id text references devices(id),
+                              created real not null, expires real not null, last_seen real not null);
+    create index auth_tokens_device on auth_tokens (device_id);
+    create table pairing_codes (code_hash text primary key, created real not null, expires real not null, used real);
+    """,
 ]
 SCHEMA_VERSION = len(MIGRATIONS)
 

@@ -13,12 +13,15 @@ import time
 from contextlib import asynccontextmanager, closing
 
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
+from urllib.parse import urlsplit
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from pai import actions, audit, embed, masking, providers, routing, store, vault, vaultkey
+from pai import actions, audit, auth, embed, masking, providers, routing, store, vault, vaultkey
 
 LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
@@ -230,6 +233,150 @@ check_vault()
 if audit.verify() is None:
     audit.checkpoint()  # protects the log up to this boot
 app = FastAPI(title="PAI prototype", lifespan=lifespan)
+
+# --- owner login ------------------------------------------------------------------------------------------------
+PUBLIC_API = {"/api/health", "/api/auth/status", "/api/auth/setup", "/api/auth/login", "/api/auth/pair"}
+APP_ORIGINS = ["capacitor://localhost", "https://localhost"]  # the Capacitor phone app (iOS, Android)
+UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _token(request: Request) -> tuple[str | None, bool]:
+    """(token, is_bearer). A bearer header wins over the cookie."""
+    h = request.headers.get("authorization", "")
+    if h.lower().startswith("bearer "):
+        return h[7:].strip(), True
+    return request.cookies.get(auth.COOKIE), False
+
+
+def _same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True  # same-origin fetches from older browsers and non-browser clients send no Origin
+    host = urlsplit(origin).netloc
+    return host in {request.headers.get("host"), request.headers.get("x-forwarded-host")}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/") or path in PUBLIC_API or request.method == "OPTIONS":
+        return await call_next(request)
+    token, bearer = _token(request)
+    session = await run_in_threadpool(auth.lookup, token)
+    if not session:
+        return JSONResponse({"detail": "sign in required"}, status_code=401)
+    if request.method in UNSAFE and not bearer and not _same_origin(request):
+        return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+    request.state.session = session
+    request.state.token = token
+    return await call_next(request)
+
+
+app.add_middleware(CORSMiddleware, allow_origins=APP_ORIGINS, allow_credentials=False,
+                   allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type"])
+
+
+def _secure(request: Request) -> bool:
+    return (request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+            or os.getenv("PAI_COOKIE_SECURE") == "1")
+
+
+def _set_cookie(request: Request, response: Response, token: str, ttl: int) -> None:
+    response.set_cookie(auth.COOKIE, token, max_age=ttl, httponly=True, samesite="strict", path="/",
+                        secure=_secure(request))
+
+
+def _throttled(t: auth.Throttle, what: str) -> None:
+    wait = t.wait()
+    if wait:
+        audited("auth_locked", what=what, retry_after=wait)
+        raise HTTPException(429, f"too many attempts; try again in {wait} s", headers={"Retry-After": str(wait)})
+
+
+class PassIn(BaseModel):
+    passphrase: str = Field(max_length=1024)
+
+
+class PairIn(BaseModel):
+    code: str = Field(max_length=32)
+    name: str = Field(min_length=1, max_length=64)
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    token, _ = _token(request)
+    s = auth.lookup(token)
+    return {"owner": auth.owner_exists(), "signed_in": bool(s), "device": s["device"] if s else None}
+
+
+@app.post("/api/auth/setup")
+def auth_setup(p: PassIn, request: Request, response: Response):
+    if len(p.passphrase) < auth.MIN_PASSPHRASE:
+        raise HTTPException(400, f"use at least {auth.MIN_PASSPHRASE} characters")
+    if not auth.create_owner(p.passphrase):
+        raise HTTPException(409, "this box already has an owner")
+    audited("owner_created")
+    token, ttl = auth.issue()
+    _set_cookie(request, response, token, ttl)
+    return {"ok": True}
+
+
+@app.post("/api/auth/login")
+def auth_login(p: PassIn, request: Request, response: Response):
+    _throttled(auth.LOGIN, "login")
+    if not auth.check_passphrase(p.passphrase):
+        auth.LOGIN.fail()
+        audited("auth_login_failed")
+        raise HTTPException(401, "wrong passphrase")
+    auth.LOGIN.ok()
+    audited("auth_login")
+    token, ttl = auth.issue()
+    _set_cookie(request, response, token, ttl)
+    return {"ok": True}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response):
+    auth.revoke_token(request.state.token)
+    audited("auth_logout", device=request.state.session["device_id"])
+    response.delete_cookie(auth.COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.post("/api/auth/pair")
+def auth_pair(p: PairIn, request: Request, response: Response):
+    _throttled(auth.PAIRING, "pairing")
+    did = auth.redeem_pairing_code(p.code, p.name.strip())
+    if not did:
+        auth.PAIRING.fail()
+        audited("device_pair_failed")
+        raise HTTPException(401, "that code is wrong, used or expired")
+    auth.PAIRING.ok()
+    audited("device_paired", device=did)
+    token, ttl = auth.issue(did)
+    _set_cookie(request, response, token, ttl)
+    return {"token": token, "device_id": did}
+
+
+@app.post("/api/devices/pairing")
+def devices_pairing():
+    code = auth.new_pairing_code()
+    audited("device_pairing_started")
+    return {"code": code, "expires_in": auth.PAIRING_TTL}
+
+
+@app.get("/api/devices")
+def devices_list():
+    return auth.list_devices()
+
+
+@app.delete("/api/devices/{did}")
+def devices_revoke(did: str):
+    if not auth.revoke_device(did):
+        raise HTTPException(404, "no such device")
+    audited("device_revoked", device=did)
+    return {"ok": True}
+
 
 
 class Answer(BaseModel):

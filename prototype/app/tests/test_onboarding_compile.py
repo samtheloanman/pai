@@ -1,3 +1,4 @@
+from conftest import sign_in
 import os
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def fresh_db(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    sign_in(client)
 
 
 def test_compile_fails_if_interview_incomplete():

@@ -38,8 +38,8 @@ def test_cases_file_is_well_formed():
     assert min(counts.values()) >= 5
 
 
-def test_run_against_testclient_with_fakes(tmp_path):
-    tc = TestClient(main.app)
+def test_run_against_testclient_with_fakes(tmp_path, client):
+    tc = client
     cases = [{"text": "Remember that x", "route": "remember"}, {"text": "forget memory 1", "route": "action"}]
     out = route_bench.run(cases, lambda text: tc.post("/api/route", json={"message": text}).json())
     s = route_bench.summarize(out)

@@ -1,3 +1,4 @@
+from conftest import sign_in
 import json
 import threading
 import time
@@ -9,8 +10,16 @@ from pai import actions, audit, store
 SENTINEL = "SENTINEL-summary-7c1e"
 
 
+AUTH_KINDS = {"owner_created", "auth_login", "auth_login_failed", "auth_logout", "auth_locked",
+              "device_pairing_started", "device_paired", "device_pair_failed", "device_revoked"}
+
+
+def action_entries():
+    return [e for e in reversed(audit.entries(limit=100)) if e["kind"] not in AUTH_KINDS]
+
+
 def kinds():
-    return [e["kind"] for e in reversed(audit.entries(limit=100))]
+    return [e["kind"] for e in action_entries()]
 
 
 def test_migration_adds_actions_table(client):
@@ -91,8 +100,8 @@ def test_confirm_and_reject_are_audited(client, monkeypatch):
     assert kinds()[-1] == "action_confirmed"
     actions.reject(b)
     assert kinds()[-1] == "action_rejected"
-    es = audit.entries(limit=100)
-    assert SENTINEL not in json.dumps(es)
+    es = action_entries()
+    assert SENTINEL not in json.dumps(audit.entries(limit=100))
     assert all(e["fields"]["id"] in (a, b) and e["fields"]["kind"] in ("delete", "send") and "status" in e["fields"] for e in es)
 
 
@@ -166,10 +175,11 @@ def test_endpoints_return_500_when_audit_down(client, monkeypatch):
 def test_local_files_listing_and_read(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
-    test_file = tmp_path / "notes.txt"
+    docs = tmp_path / "docs"; docs.mkdir()  # tmp_path also holds the vault and audit files
+    test_file = docs / "notes.txt"
     test_file.write_text("Local knowledge without cloud egress", encoding="utf-8")
-    
-    files = actions.list_local_files(str(tmp_path))
+
+    files = actions.list_local_files(str(docs))
     assert len(files) == 1
     assert files[0]["name"] == "notes.txt"
     assert files[0]["size"] > 0
@@ -236,6 +246,7 @@ def test_propose_file_write_and_confirm(client, tmp_path, monkeypatch):
 def test_tools_api_endpoints(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    sign_in(client)  # a new, empty vault: the owner and session live in the vault
 
     # 1. Write file via proposed action and confirm via API
     write_res = client.post("/api/tools/files/write", json={"filepath": "docs/readme.txt", "content": "Hermes PAI Local Tooling"})
@@ -272,6 +283,7 @@ def test_tools_api_endpoints(client, tmp_path, monkeypatch):
 def test_mail_folder_traversal_blocked(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    sign_in(client)  # a new, empty vault: the owner and session live in the vault
     with pytest.raises(ValueError, match="escapes allowed maildir"):
         actions.list_local_mail(folder="../../etc")
 
@@ -282,6 +294,7 @@ def test_mail_folder_traversal_blocked(client, tmp_path, monkeypatch):
 def test_list_files_not_a_directory_error(client, tmp_path, monkeypatch):
     import main
     monkeypatch.setattr(main, "DATA_DIR", str(tmp_path))
+    sign_in(client)  # a new, empty vault: the owner and session live in the vault
     single_file = tmp_path / "hello.txt"
     single_file.write_text("world", encoding="utf-8")
 

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Back up, restore, export or import the PAI vault of the Docker prototype. Runs compose through scripts/pai-up,
+# so the vault key comes from the same place as when you start PAI.
+#   scripts/pai-backup backup  [dir]     encrypted snapshot to dir (default ./backups); safe while PAI runs
+#   scripts/pai-backup verify  <file>    check a snapshot opens with your key and its log is intact
+#   scripts/pai-backup restore <file>    stop PAI, put the snapshot back, start PAI (old files are kept aside)
+#   scripts/pai-backup export  <file>    profile, rules and memories as readable JSON (NOT encrypted)
+#   scripts/pai-backup import  <file> [--replace]   add an export into this vault
+# A snapshot is useless without the vault key, and the key is not inside it. Back the key up separately.
+set -eu
+cd "$(dirname "$0")/.."
+UP=scripts/pai-up
+die() { echo "pai-backup: $*" >&2; exit 1; }
+abs() { case "$1" in /*) echo "$1" ;; *) echo "$PWD/$1" ;; esac; }
+oneshot() {  # run the backup tool in a fresh app container with one host file mounted at /io/<name>
+  f="$(abs "$1")"; shift
+  $UP run --rm --no-deps -T -v "$(dirname "$f"):/io" app python -m pai.backup "$@"
+}
+cmd="${1:-}"; [ $# -gt 0 ] && shift
+case "$cmd" in
+  backup)
+    dir="$(abs "${1:-backups}")"; mkdir -p "$dir"; chmod 700 "$dir"
+    out="$($UP exec -T app python -m pai.backup create /data/backups | tail -1)"
+    $UP cp "app:$out" "$dir/" >/dev/null
+    $UP exec -T app rm -f "$out"
+    echo "$dir/$(basename "$out")" ;;
+  verify)  [ -f "${1:-}" ] || die "no such file: ${1:-}"; oneshot "$1" verify "/io/$(basename "$1")" ;;
+  restore)
+    [ -f "${1:-}" ] || die "no such file: ${1:-}"
+    oneshot "$1" verify "/io/$(basename "$1")"
+    $UP stop app
+    oneshot "$1" restore "/io/$(basename "$1")" --yes
+    $UP start app ;;
+  export)  [ -n "${1:-}" ] || die "give an output file"; touch "$1"; chmod 600 "$1"; oneshot "$1" export "/io/$(basename "$1")" ;;
+  import)  [ -f "${1:-}" ] || die "no such file: ${1:-}"; f="$1"; shift; oneshot "$f" import "/io/$(basename "$f")" "$@" ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

@@ -4,7 +4,7 @@
 
 PAI runs an AI assistant on your own computer: a local chat model, local speech-to-text and text-to-speech, an encrypted memory vault, an approval step for risky actions, and a tamper-evident activity log. Models and memory stay on the machine; cloud models are off unless you turn them on with your own key.
 
-This repository is the open-source PAI software. It is a working prototype: there is no login yet and the PAI OS image is not built.
+This repository is the open-source PAI software. It is a working prototype: the PAI OS image is not built yet.
 
 ---
 
@@ -117,7 +117,7 @@ Still stuck? Email `agents@freedomos.org` with `[install]` in the subject (see [
 
 ## Security notes
 
-- PAI has **no login yet**. Anyone who can reach port 8088 can read memories and confirm actions. It binds to `127.0.0.1` by default: keep it on this computer or a private network and never publish the port.
+- On first open PAI asks you to create the owner passphrase; every data route needs that login or a paired device. Create the passphrase before you publish the app to a private network, and never publish port 8088 to the internet.
 - The vault key lives outside `.env` and outside the app container's environment. Lose the key and the vault cannot be opened.
 
 ---

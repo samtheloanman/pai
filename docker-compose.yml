@@ -27,6 +27,10 @@ services:
       - "PAI_VAULT_KEY=${PAI_VAULT_KEY:?run ./run.sh once, it creates your own vault key in .env}"
     volumes:
       - pai_data:/data
+    depends_on:  # start the bundled Ollama first; not required, so a remote LITELLM_URL still works
+      ollama:
+        condition: service_started
+        required: false
     restart: unless-stopped
 
 volumes:

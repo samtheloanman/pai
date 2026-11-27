@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toRequest } from './api.js'
+import { api, toRequest } from './api.js'
 
 const msg = (role, t) => ({ role, content: [{ type: 'text', text: t }] })
 
@@ -26,4 +26,20 @@ describe('toRequest cloud flag', () => {
     expect(toRequest([msg('user', 'hi')], true).cloud).toBe(true)
     expect(toRequest([msg('user', 'hi')], false)).not.toHaveProperty('cloud')
   })
+})
+
+describe('api sign-out signal', () => {
+  const run = async (path, status) => {
+    const seen = []
+    globalThis.window = globalThis.window || new EventTarget()
+    const on = () => seen.push(1)
+    window.addEventListener('pai:signed-out', on)
+    globalThis.fetch = async () => ({ ok: status < 400, status, json: async () => ({ detail: 'x' }) })
+    await api(path).catch(() => {})
+    window.removeEventListener('pai:signed-out', on)
+    return seen.length
+  }
+  it('fires when a data route answers 401', async () => { expect(await run('/api/memories', 401)).toBe(1) })
+  it('does not fire for a wrong passphrase on the sign-in route', async () => { expect(await run('/api/auth/login', 401)).toBe(0) })
+  it('does not fire on other errors', async () => { expect(await run('/api/memories', 500)).toBe(0) })
 })
