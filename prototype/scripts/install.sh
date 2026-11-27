@@ -1,6 +1,6 @@
 #!/bin/sh
 # 1-Click Bootstrap Installer for PAI (Personal AI OS) Prototype
-# Validates host RAM, sets up macOS Keychain vault key, validates model volumes,
+# Validates host RAM, stores the vault key outside .env (Keychain / systemd-creds / 0600 file), validates model volumes,
 # starts the stack via scripts/pai-up, and verifies health check.
 set -eu
 
@@ -72,7 +72,7 @@ fi
 # -----------------------------------------------------------------------------
 # 3. Ensure PAI_VAULT_KEY exists or create/import one into macOS Keychain
 # -----------------------------------------------------------------------------
-echo "[3/6] Ensuring PAI_VAULT_KEY and environment configuration..."
+echo "[3/6] Ensuring .env configuration and the vault key (kept outside .env)..."
 
 if [ ! -f .env ]; then
   echo "  Creating .env from .env.example..."
@@ -97,37 +97,13 @@ if [ -z "$CURRENT_MASTER_KEY" ] || [ "$CURRENT_MASTER_KEY" = "sk-change-me" ]; t
   echo "  Generated new LITELLM_MASTER_KEY in .env"
 fi
 
-# macOS Keychain management or headless fallback
-if command -v security >/dev/null 2>&1 && [ "$(uname -s)" = "Darwin" ]; then
-  if security find-generic-password -s pai-vault-key >/dev/null 2>&1; then
-    echo "  ✓ Vault key already present in macOS Keychain (pai-vault-key)."
-  else
-    ENV_KEY="$(grep '^PAI_VAULT_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]' || true)"
-    if [ -n "$ENV_KEY" ]; then
-      echo "  Importing PAI_VAULT_KEY from .env into macOS Keychain..."
-      printf '%s\n' "$ENV_KEY" | "$SCRIPT_DIR/pai-up" import-key
-    else
-      echo "  Creating new random PAI_VAULT_KEY in macOS Keychain..."
-      "$SCRIPT_DIR/pai-up" new-key
-    fi
-    echo "  ✓ Vault key stored in macOS Keychain."
-  fi
-  export PAI_VAULT_KEY="$(security find-generic-password -s pai-vault-key -w 2>/dev/null || true)"
+# Vault key: macOS Keychain, else a systemd-creds credential, else a 0600 file in ~/.config/pai (see scripts/pai-up).
+# It never goes into .env; an old PAI_VAULT_KEY line there is moved out, not dropped.
+"$SCRIPT_DIR/pai-up" migrate-key
+if "$SCRIPT_DIR/pai-up" has-key; then
+  echo "  ✓ Vault key already stored outside .env."
 else
-  ENV_KEY="$(grep '^PAI_VAULT_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d '[:space:]' || true)"
-  if [ -z "$ENV_KEY" ]; then
-    echo "  Generating fresh PAI_VAULT_KEY in .env (non-macOS fallback)..."
-    NEW_KEY="$(openssl rand -hex 32)"
-    if grep -q "^PAI_VAULT_KEY=" .env; then
-      TMP_ENV=$(mktemp)
-      sed "s|^PAI_VAULT_KEY=.*|PAI_VAULT_KEY=${NEW_KEY}|" .env > "$TMP_ENV" && mv "$TMP_ENV" .env
-    else
-      echo "PAI_VAULT_KEY=${NEW_KEY}" >> .env
-    fi
-    ENV_KEY="$NEW_KEY"
-  fi
-  export PAI_VAULT_KEY="$ENV_KEY"
-  echo "  ✓ Vault key configured in .env fallback."
+  "$SCRIPT_DIR/pai-up" new-key
 fi
 
 # -----------------------------------------------------------------------------

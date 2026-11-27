@@ -94,12 +94,13 @@ def test_proxy_config_allows_only_the_allowlist():
     assert 'acl allowed dstdomain "/run/egress/allow.txt"' in conf
 
 
-def test_run_sh_does_not_pipe_into_grep_q_under_pipefail():
-    # `producer | grep -q` under `set -o pipefail` reports "no match" when grep exits early and the producer
-    # gets SIGPIPE. Here that would create a second vault key over an existing vault.
-    text = (ROOT / "run.sh").read_text()
-    assert "pipefail" in text
-    assert not re.search(r"\|\s*grep\s+-[a-zA-Z]*q", text)
+@pytest.mark.parametrize("path", [p for p in SCRIPTS if p.exists()], ids=lambda p: str(p.relative_to(ROOT)))
+def test_no_pipe_into_grep_q_under_pipefail(path):
+    # `producer | grep -q` under `set -o pipefail` can report "no match" when grep exits early and the producer
+    # gets SIGPIPE. In the installer that would mean missing an existing vault and creating a second key.
+    text = path.read_text()
+    if "pipefail" in text:
+        assert not re.search(r"\|\s*grep\s+-[a-zA-Z]*q", text)
 
 
 def test_openrouter_setup_mode_docs_open_the_proxy_for_openrouter():

@@ -1,34 +1,11 @@
-version: "3.8"
+# Thin entrypoint onto the PAI stack in prototype/ (llama.cpp + LiteLLM + Speaches + app). There is one stack:
+# edit prototype/docker-compose.yml, not this file.
+#
+# Start it with ./run.sh, which creates the vault key outside the repo and passes it as a Compose secret.
+# Plain `docker compose up` here needs the key in the shell, so prefer: prototype/scripts/pai-up --profile local up -d
+# All published ports bind to 127.0.0.1 (PRD OS-5). The project name matches what prototype/scripts/install.sh writes
+# to prototype/.env, so both paths use the same volumes and the same vault.
+name: ${COMPOSE_PROJECT_NAME:-pai-mvp}
 
-services:
-  ollama:
-    image: ollama/ollama:latest@sha256:1cabd20e1762a7a8444bf4a7110b346d923cd77ab6c97c984434140638c913ec
-    container_name: pai-ollama
-    ports:
-      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-
-  pai-os:
-    build:
-      context: ./prototype
-      dockerfile: app/Dockerfile
-    container_name: pai-os
-    ports:
-      - "127.0.0.1:8088:8088"
-    environment:
-      - PORT=8088
-      - LITELLM_URL=${LITELLM_URL:-http://ollama:11434}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
-      - CHAT_MODEL=${CHAT_MODEL:-gemma3:4b}
-      - DECIDE_MODEL=${DECIDE_MODEL:-gemma3:4b}
-      - DATA_DIR=/data
-      - "PAI_VAULT_KEY=${PAI_VAULT_KEY:?run ./run.sh once, it creates your own vault key in .env}"
-    volumes:
-      - pai_data:/data
-    restart: unless-stopped
-
-volumes:
-  ollama_data:
-  pai_data:
+include:
+  - path: prototype/docker-compose.yml
