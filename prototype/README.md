@@ -6,16 +6,18 @@ Runs the PAI software on a laptop or a cloud VM: setup interview, chat with loca
 |---|---|---|
 | `llm` | llama.cpp server with a GGUF model (local mode only) | `ghcr.io/ggml-org/llama.cpp:server` |
 | `speaches` | Local speech-to-text (faster-whisper) and text-to-speech (Kokoro) | `ghcr.io/speaches-ai/speaches:latest-cpu` |
-| `litellm` | One OpenAI-compatible address for chat, STT and TTS | `ghcr.io/berriai/litellm:main-stable` |
+| `litellm` | One OpenAI-compatible address for chat, STT and TTS | `ghcr.io/berriai/litellm` v1.108.17-lts, pinned by digest |
+| `egress` | Allowlist proxy: LiteLLM's only way out; forwards to the provider hosts you turned on and nothing else | `ubuntu/squid`, pinned by digest |
 | `app` | PAI web app: FastAPI back end + React chat front end (assistant-ui, Geist font), encrypted SQLite (SQLCipher) vault in the `data` volume | built from `app/Dockerfile` (builds `web/` first) |
 
-Prototype only: image tags are not pinned yet, no login on the app, no A/B updates. See Known limits.
+Prototype only: images are pinned by digest and LiteLLM can reach only the provider hosts you turn on, but there is no login on the app, no A/B updates. See Known limits.
 
 ## Run on a laptop (32-64 GB)
 
 ```bash
-cp .env.example .env            # set LITELLM_MASTER_KEY and PAI_VAULT_KEY; pick MODEL_HF
-docker compose --profile local up -d --build
+cp .env.example .env            # set LITELLM_MASTER_KEY; pick MODEL_HF (the vault key does not go here)
+scripts/pai-up new-key          # see "Vault key" below
+scripts/pai-up --profile local up -d --build
 open http://localhost:8088
 ```
 
@@ -26,34 +28,34 @@ open http://localhost:8088
 
 ## Vault key (required)
 
-`PAI_VAULT_KEY` encrypts the vault (memories, rules, profile, pending actions). The app will not start without it. Generate one and put it in `.env`:
-
-```bash
-openssl rand -hex 32
-```
+The vault key encrypts the vault (memories, rules, profile, pending actions). The app will not start without it. Create one with `scripts/pai-up new-key`; it is stored outside `.env` (see below).
 
 **If you lose this key you lose the vault; there is no recovery.** Back it up somewhere other than this machine.
 
 `AUDIT_CONTENT` (default `0`): the activity log stores metadata only (event kind, route, ids, and model name and duration for model calls). Set `AUDIT_CONTENT=1` to also store message and memory text in the log.
 
-## Vault key (macOS Keychain)
+## Where the vault key lives
 
-The app reads the vault key from a file (`PAI_VAULT_KEY_FILE`, a Compose secret), else a systemd credential `vault-key`, else the `PAI_VAULT_KEY` env var. To keep it out of `.env` and the container environment on a Mac:
+The app reads the vault key from a file (`PAI_VAULT_KEY_FILE`, a Compose secret), else a systemd credential `vault-key`, else the `PAI_VAULT_KEY` env var. `scripts/pai-up` keeps it out of `.env` and the container environment and hands it to Compose as the `vault_key` secret. Key store, best first (force one with `PAI_KEY_STORE=keychain|systemd|file`):
+
+- macOS: the Keychain (service `pai-vault-key`).
+- Linux: `~/.config/pai/vault-key.cred`, encrypted with `systemd-creds encrypt` when that works unprivileged; otherwise `~/.config/pai/vault-key`, mode 0600, in a mode-0700 directory. `PAI_CONFIG_DIR` moves both.
 
 ```bash
-scripts/pai-up new-key                        # new vault: key into the Keychain
-grep '^PAI_VAULT_KEY=' .env | cut -d= -f2- | scripts/pai-up import-key   # existing vault: move its key, then delete it from .env
+scripts/pai-up new-key                        # new vault: create and store a key
+scripts/pai-up migrate-key                    # existing vault: move PAI_VAULT_KEY out of .env, then drop the line
 scripts/pai-up --profile local up -d --build  # any docker compose arguments
 ```
 
-Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a key already in the Keychain.
+Losing the key loses the vault. `import-key` and `new-key` refuse to overwrite a stored key; `migrate-key` refuses if `.env` and the store hold different keys. A key still in `.env` keeps working but `pai-up` warns about it.
 
 ## Setup mode with OpenRouter (optional)
 
 Uses a free OpenRouter model for chat so setup works before a local model is downloaded. **The interview answers leave the machine** and free models may log prompts. Voice stays local.
 
 ```bash
-# in .env: OPENROUTER_API_KEY=..., LITELLM_CONFIG=litellm.openrouter.yaml
+# in .env: OPENROUTER_API_KEY=..., LITELLM_CONFIG=litellm.openrouter.yaml, PAI_EGRESS_ALLOW=openrouter.ai
+# PAI_EGRESS_ALLOW opens the outbound proxy for that one host; without it LiteLLM cannot reach OpenRouter.
 docker compose up -d --build     # no --profile local: llm is not started
 ```
 
@@ -77,7 +79,7 @@ or by installing Tailscale on the VM and changing the port binding to the VM's T
 4. **Memory**: see and forget anything PAI stored.
 5. **Approvals**: risky actions are proposed, never run directly. Saying "delete memory 3" in chat creates a pending action; it runs only when you press Confirm (at most once), and Reject or a timeout (15 minutes) discards it.
 6. **Activity**: a hash-chained log of what PAI did (model calls, routes, proposals, confirmations, config changes). "Verify" re-checks the chain; it reports whether edits, deletions or reordering are detected.
-7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart litellm`), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
+7. **Providers**: optional cloud models, off by default. Add a provider key, turn cloud on, then tick the cloud toggle on a chat message to send that one message out. Cloud requests carry the message and recent chat only, never your profile, rules or memories, and messages that look like card numbers, government IDs or similar stay on the box. Provider keys and the cloud switch are written to files LiteLLM reads at start, so **restart the `litellm` container after changing providers** (`docker compose restart litellm`; the outbound proxy picks up the new host list by itself within a few seconds), then press "I've restarted PAI" in Providers to clear the restart notice (`restart_required` is cleared by you, not detected).
 
 ## Routing and the route bench
 

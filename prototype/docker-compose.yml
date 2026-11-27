@@ -1,29 +1,56 @@
 # PAI prototype. Ports bind to 127.0.0.1 only; reach a cloud VM through Tailscale or an SSH tunnel.
 #   local mode (default):  docker compose --profile local up -d
-#   OpenRouter setup mode: LITELLM_CONFIG=litellm.openrouter.yaml docker compose up -d
+#   OpenRouter setup mode: PAI_EGRESS_ALLOW=openrouter.ai LITELLM_CONFIG=litellm.openrouter.yaml docker compose up -d
+# Images are pinned by digest (tests/test_supply_chain.py enforces it). To update one: pick a release tag, verify its
+# signature where the publisher signs (LiteLLM: docs.litellm.ai/docs/proxy/docker_image_security), then replace tag and digest.
+# Networks: `internal` has no route out. LiteLLM sits only there and reaches the internet through `egress`,
+# which forwards to the hosts the owner turned on in Providers and nothing else.
 services:
   llm:
     profiles: [local]
-    image: ghcr.io/ggml-org/llama.cpp:server
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:b0cd5490eefff30b40dcd47f7249a7d7211136908f73fe440a2a86b35a22b23b
     # -c is shared across --parallel slots: 16384 gives each of the 2 slots 8192 (chat + routing decision)
     command: ["-hf", "${MODEL_HF:-unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M}", "--host", "0.0.0.0", "--port", "8080", "-c", "${CTX:-16384}", "--jinja", "--parallel", "2"]
     volumes: [models:/root/.cache/huggingface]  # llama.cpp -hf downloads land here
+    networks: [internal, edge]  # edge: model download on first start
     restart: unless-stopped
 
   speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    image: ghcr.io/speaches-ai/speaches:latest-cpu@sha256:21e3df06d842fb7802ab470dd77c25f0e8c0d22950e8d8c6ae886e851af53ef8
     volumes: [voice:/home/ubuntu/.cache/huggingface/hub]
+    networks: [internal, edge]  # edge: voice model download on first start
     restart: unless-stopped
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    # LTS line, published after the 2026-10-21 incident; keyless cosign signature checked 2026-11-25.
+    image: ghcr.io/berriai/litellm:v1.108.17-lts@sha256:66707268642c14e7fcbe69f7495fa2c243df2b4e5459dc0c3989268ab81f3289
     # cloud keys + generated config come from the app via the shared volume; falls back to /config.yaml
     entrypoint: ["sh", "-c", "set -a; [ -f /shared/litellm.env ] && . /shared/litellm.env; set +a; C=/config.yaml; [ -f /shared/litellm.generated.yaml ] && C=/shared/litellm.generated.yaml; exec litellm --config \"$${LITELLM_CONFIG_PATH:-$$C}\" --port 4000"]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+      HTTPS_PROXY: http://egress:3128
+      HTTP_PROXY: http://egress:3128
+      NO_PROXY: llm,speaches,localhost,127.0.0.1
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"  # use the bundled price table; no fetch from GitHub at start
     volumes: ["./${LITELLM_CONFIG:-litellm.local.yaml}:/config.yaml:ro", "shared:/shared:ro"]
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    depends_on: [egress]
+    restart: unless-stopped
+
+  egress:
+    image: ubuntu/squid:latest@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
+    entrypoint: ["/bin/sh", "/egress/entrypoint.sh"]
+    environment:
+      PAI_EGRESS_ALLOW: ${PAI_EGRESS_ALLOW:-}  # extra hosts, space separated; the app writes the rest
+    volumes: ["./egress:/egress:ro", "./egress/squid.conf:/etc/squid/squid.conf:ro", "shared:/shared:ro"]
+    networks: [internal, edge]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]  # squid drops from root to its own user at start
     restart: unless-stopped
 
   app:
@@ -37,11 +64,17 @@ services:
     secrets: [vault_key]
     volumes: [data:/data, shared:/shared]
     ports: ["127.0.0.1:${PAI_PORT:-8088}:8088"]
+    networks: [internal, edge]  # edge: the published port and the embedding model download
     depends_on: [litellm, speaches]
     restart: unless-stopped
 
-# Read from the PAI_VAULT_KEY of the shell that runs compose (scripts/pai-up fills it from the macOS Keychain) or .env.
+# Read from the PAI_VAULT_KEY of the shell that runs compose; scripts/pai-up fills it from the key store (macOS Keychain,
+# systemd-creds, or ~/.config/pai/vault-key) so the key is not kept in .env. Docker mounts it at /run/secrets/vault_key.
 secrets:
   vault_key: {environment: PAI_VAULT_KEY}
+
+networks:
+  internal: {internal: true}
+  edge: {}
 
 volumes: {models: {}, voice: {}, data: {}, shared: {}}

@@ -1,177 +1,79 @@
-# PAI Mesh VPN: Secure Zero-Trust Remote & Local Gateway
+# PAI private remote access
 
-**Goal:** Turn the PAI host appliance (or Dell Precision / 24/7 node) into a fortified WireGuard Mesh VPN gateway via Tailscale, allowing all client devices (Macs, iPhones, Android phones, laptops) to securely route all external and internal traffic through PAI's encrypted zero-trust umbrella with zero open WAN ports, DNS sinkholing, and cryptographic telemetry defenses.
+**Goal:** reach your PAI box from your phone or laptop, from anywhere, without opening a port to the internet.
 
----
+This replaces an earlier design that made the PAI box an exit node and a router for the whole home network. That design is withdrawn: it gave every device on the private network a path into the home LAN, turned on remote shell access, and conflicts with PRD requirement LAN-2 (PAI does not carry other devices' traffic in the MVP).
 
-## 1. Network Topology & Trust Boundaries
+## How it works
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                             TAILNET ENCRYPTED MESH                               │
-│                         (WireGuard Layer 3 Overlay)                              │
-│                                                                                  │
-│   ┌───────────────────────────┐                ┌─────────────────────────────┐   │
-│   │     Mobile iPhone/iOS     │                │     Android / Laptop        │   │
-│   │     100.93.199.90         │                │     100.73.237.119          │   │
-│   │  (tag:pai-client)         │                │  (tag:pai-client)           │   │
-│   └─────────────┬─────────────┘                └──────────────┬──────────────┘   │
-│                 │                                             │                  │
-│                 │   Encrypted Tunnel (ChaCha20-Poly1305)      │                  │
-│                 └───────────────────────┬─────────────────────┘                  │
-│                                         ▼                                        │
-│                        ┌─────────────────────────────────┐                       │
-│                        │       PAI GATEWAY APPLIANCE     │                       │
-│                        │       dell-precision            │                       │
-│                        │       100.104.238.110           │                       │
-│                        │       LAN: 192.168.50.127       │                       │
-│                        │       (tag:pai-box)             │                       │
-│                        └────────────────┬────────────────┘                       │
-└─────────────────────────────────────────┼────────────────────────────────────────┘
-                                          │
-                  ┌───────────────────────┴───────────────────────┐
-                  ▼                                               ▼
-   ┌─────────────────────────────┐                 ┌─────────────────────────────┐
-   │    Internal Secure LAN      │                 │    Encrypted WAN Egress     │
-   │    (192.168.50.0/24)        │                 │    (Clean ISP Exit)         │
-   │ • Fast-API Vault (:8000)    │                 │ • DNS via Sinkhole (Unbound)│
-   │ • LLM Inference (:11434)    │                 │ • Ad/Telemetry Blocker      │
-   │ • Rakazo / Browser VM       │                 │ • No public IP exposure     │
-   └─────────────────────────────┘                 └─────────────────────────────┘
+  phone / laptop  ──── encrypted private network (WireGuard) ────  PAI box
+  (Tailscale app)                                                  tailscale serve :443
+                                                                        │
+                                                                        ▼
+                                                              PAI app on 127.0.0.1:8088
 ```
 
----
+- The PAI app listens on `127.0.0.1` only. Nothing listens on the home network or the internet.
+- `tailscale serve` publishes the app to your private network over HTTPS. Only devices you added to that network can reach it.
+- The box is not an exit node, does not route your LAN, and does not run Tailscale SSH. Funnel (publishing to the internet) is never used.
 
-## 2. Gateway Node Configuration (Linux Host / PAI Appliance)
+## Choose a coordinator
 
-### A. Kernel Hardening & Forwarding (`/etc/sysctl.d/99-pai-vpn.conf`)
-Enable packet forwarding, TCP BBR congestion control, and reverse-path filtering to prevent IP spoofing:
+| Option | When | Setting |
+|---|---|---|
+| Tailscale account (default) | Easiest. Tailscale's servers introduce your devices to each other; they cannot read the traffic. | none |
+| Headscale (self-hosted) | You want no outside company involved. You run the coordinator yourself. | `PAI_LOGIN_SERVER=https://your-headscale-host` |
 
-```ini
-# IPv4 and IPv6 packet forwarding for VPN egress
-net.ipv4.ip_forward = 1
-net.ipv6.conf.all.forwarding = 1
+## Set up the box
 
-# TCP BBR + Fair Queuing for low latency audio/video streaming
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-
-# Reverse path filtering (Drop spoofed ingress packets)
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-
-# Disable ICMP redirect acceptance
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-
-# SYN flood protection
-net.ipv4.tcp_syncookies = 1
-```
-
-Apply immediately:
-```bash
-sudo sysctl -p /etc/sysctl.d/99-pai-vpn.conf
-```
-
----
-
-### B. Tailscale Gateway Activation
-
-Advertise the host node as an **Exit Node** and route the local subnet:
-```bash
-sudo tailscale up \
-  --advertise-exit-node \
-  --advertise-routes=192.168.50.0/24 \
-  --accept-dns=false \
-  --ssh
-```
-
----
-
-### C. `nftables` Default-Drop & NAT Masquerade (`/etc/nftables.conf`)
-
-Ensure client traffic traversing `tailscale0` is NAT-masqueraded when exiting to the physical LAN/WAN interface (`eth0` or `enp0s31f6`):
-
-```nft
-table inet pai_filter {
-    chain input {
-        type filter hook input priority filter; policy drop;
-
-        # Allow established and related connections
-        ct state established,related accept
-
-        # Allow loopback
-        iifname "lo" accept
-
-        # Allow all WireGuard mesh traffic on tailscale0
-        iifname "tailscale0" accept
-
-        # Allow local subnet SSH & ICMP ping only
-        ip saddr 192.168.50.0/24 tcp dport 22 accept
-        icmp type echo-request accept
-    }
-
-    chain forward {
-        type filter hook forward priority filter; policy drop;
-
-        # Allow forwarding from tailscale0 out to WAN/LAN
-        iifname "tailscale0" accept
-        ct state established,related accept
-    }
-}
-
-table ip pai_nat {
-    chain postrouting {
-        type nat hook postrouting priority srcnat; policy accept;
-
-        # Masquerade traffic exiting physical WAN/LAN interface
-        oifname != "tailscale0" ip saddr 100.64.0.0/10 masquerade
-    }
-}
-```
-
-Reload firewall:
-```bash
-sudo nft -f /etc/nftables.conf
-```
-
----
-
-## 3. Client Configuration (iOS, Android, macOS, Windows)
-
-### iOS & Android (PAI Telemetry Sentinel)
-1. Open **Tailscale** on the mobile client.
-2. Tap the three dots `...` (or Settings) -> **Exit Node**.
-3. Select `dell-precision` (or your PAI box).
-4. Toggle **Use Exit Node**.
-5. Enable **Allow Local Network Access** (to reach local printers/Chromecast if desired, or disable for full zero-trust lockdown).
-6. Under Android / iOS VPN Settings:
-   - Toggle **Always-on VPN: ON**
-   - Toggle **Block connections without VPN (Killswitch): ON**
-
-### macOS Client
-Run:
-```bash
-tailscale set --exit-node=dell-precision --exit-node-allow-lan-access=true
-```
-
-To deactivate:
-```bash
-tailscale set --exit-node=""
-```
-
----
-
-## 4. Leak Verification & Healthcheck
-
-Run the PAI VPN verification script to ensure 100% encryption, zero DNS leakage, and verified gateway IP:
+Linux, as root. Install Tailscale from your distribution's repositories or the signed repository at <https://tailscale.com/download/linux>. The script installs the package if your repositories already carry it; it never downloads and runs an install script.
 
 ```bash
-curl -s https://am.i.mullvad.net/json | jq '{ip: .ip, country: .country_name, blacklisted: .blacklisted}'
+cd prototype
+
+# 1. Join the private network. On a box with no screen, give it a pre-auth key file.
+sudo TS_AUTHKEY_FILE=/root/ts-authkey ./setup-pai-vpn-gateway.sh up
+
+# 2. Publish the PAI app to the private network.
+sudo ./setup-pai-vpn-gateway.sh serve
+
+# 3. Check it.
+./verify-vpn-tunnel.sh
 ```
 
-Verify DNS server address is the PAI sinkhole:
+`serve` refuses to publish while the app has no login, because every device on your private network could then read and change your data. Owner login is the next piece of work (see the plan in `docs/superpowers/plans/`). To publish anyway on a private network that holds only your own devices, set `PAI_SERVE_WITHOUT_LOGIN=1`.
+
+Add `--dry-run` to any command to print what it would run.
+
+## Set up your phone or laptop
+
+1. Install the Tailscale app and sign in to the same account (or point it at your Headscale server).
+2. Open `https://<box-name>.<your-network>.ts.net`. The exact address is printed by `tailscale serve status` on the box.
+3. Do not select the PAI box as an exit node. It is not one.
+
+## What the check covers
+
+`verify-vpn-tunnel.sh` exits non-zero if any of these fail:
+
+1. The box is connected to the private network.
+2. It advertises no exit node and no LAN routes, and Tailscale SSH is off.
+3. Funnel is off.
+4. The app port is bound to loopback only, and the app answers there.
+5. Only the PAI app is published, and its private HTTPS address answers.
+6. If the app is published, its data routes refuse a request with no login.
+
+It contacts no outside service.
+
+## Undo
+
 ```bash
-dig whoami.akamai.net +short
+sudo ./setup-pai-vpn-gateway.sh down
 ```
+
+This unpublishes the app and disconnects. It also removes what the earlier version of the script set up: the settings file `/etc/sysctl.d/99-pai-vpn.conf` and its NAT and forwarding rules. Packet forwarding itself is left on, because Docker needs it; without the NAT rules and the advertised routes the box no longer routes for other devices.
+
+## Not in this version
+
+- Blocking ads or trackers for other devices on your network (needs PAI to be the router; open decision, PRD LAN-2).
+- Using the box as a VPN exit for your phone's internet traffic.

@@ -28,12 +28,14 @@ Rejected: `protectai/llm-guard` (archived), Wazuh (needs a manager), Zeek (too h
 
 ### Phase 0: security fixes that cannot wait
 
-- [ ] Pin `ghcr.io/berriai/litellm` by image digest in `prototype/docker-compose.yml` and the root `docker-compose.yml`. Today it uses the floating `main-stable` tag. Confirm the chosen version against LiteLLM's own incident notes (2026-03 and 2026-10-21) before pinning.
-- [ ] Put LiteLLM on a Compose network with no default route out; allow only the provider hosts the owner has turned on.
-- [ ] Test: a compose lint test fails on any image without `@sha256:`.
-- [ ] Rewrite `prototype/setup-pai-vpn-gateway.sh`: remove `--advertise-exit-node`, `--advertise-routes`, `--ssh` and the MASQUERADE rule; stop piping `curl` to a root shell (use the distro package, pinned); accept a pre-auth key so a headless box does not block on login; add a teardown.
-- [ ] Remove the hardcoded `100.104.238.110` from `prototype/verify-vpn-tunnel.sh`; make it fail with a non-zero exit when a check fails.
-- [ ] Resolve two contradictions in the docs: PRD LAN-2 (no interception of other devices in MVP) against `docs/NETWORK-SECURITY-ENGINE.md`; and 1.1.1.1 DoH in the multi-shield doc against SPEC.md line 129.
+- [x] Pin `ghcr.io/berriai/litellm` by image digest in `prototype/docker-compose.yml` and the root `docker-compose.yml`. Today it uses the floating `main-stable` tag. Confirm the chosen version against LiteLLM's own incident notes (2026-03 and 2026-10-21) before pinning.
+- [x] Put LiteLLM on a Compose network with no default route out; allow only the provider hosts the owner has turned on.
+- [x] Test: a compose lint test fails on any image without `@sha256:`.
+- [x] Rewrite `prototype/setup-pai-vpn-gateway.sh`: remove `--advertise-exit-node`, `--advertise-routes`, `--ssh` and the MASQUERADE rule; stop piping `curl` to a root shell (use the distro package, pinned); accept a pre-auth key so a headless box does not block on login; add a teardown.
+- [x] Remove the hardcoded `100.104.238.110` from `prototype/verify-vpn-tunnel.sh`; make it fail with a non-zero exit when a check fails.
+- [x] Resolve two contradictions in the docs: PRD LAN-2 (no interception of other devices in MVP) against `docs/NETWORK-SECURITY-ENGINE.md`; and 1.1.1.1 DoH in the multi-shield doc against SPEC.md line 129.
+
+Done 2026-11-25 on `claude/phase0-security-fixes`. LiteLLM is pinned to v1.108.17-lts by digest (keyless cosign signature verified); every other image is pinned too. LiteLLM sits on an internal network and reaches the internet only through an allowlist proxy (`prototype/egress`), checked live: direct egress fails, an allowlisted host answers, any other host gets 403. Also fixed: the root `docker-compose.yml` published the app and Ollama on all interfaces and carried a default vault key.
 
 ### Phase 1: owner login and device tokens (was item 7)
 
@@ -48,10 +50,10 @@ Blocks every later phase that exposes the app.
 
 ### Phase 2: private network, installable web app, QR pairing (was item 3)
 
-- [ ] Web app manifest and service worker so it installs on a phone home screen (APP-1).
+- [ ] Web app manifest and service worker so it installs on a phone home screen (APP-1). State on 2026-11-25: a minimal manifest exists (`prototype/app/static/manifest.json`: name, colours, standalone) with no icons and no service worker, so phones will not offer to install it. No native app exists; `docs/superpowers/specs/2026-11-08-mobile-direction.md` recommends a Capacitor wrapper and is still marked decision pending. Its second open question (Tailscale as the default path) is now answered: yes.
 - [ ] Publish the app on the overlay interface only (`tailscale serve`); never on the LAN or WAN interface.
 - [ ] Pairing page shows a QR code holding the tailnet URL and a one-time device code from Phase 1 (APP-2).
-- [ ] Document both paths: Tailscale account, and Headscale for owners who want no outside coordinator.
+- [ ] Tailscale account is the default; Headscale is the documented option (`PAI_LOGIN_SERVER`). Owner decision 2026-11-25. First version of the doc: `docs/PAI-MESH-VPN-SETUP.md`.
 - [ ] Verify script checks: app unreachable from the LAN address, reachable from the tailnet address, 401 without a token.
 
 ### Phase 3: finish the M0 items marked "In progress" (was item 8)
@@ -68,6 +70,7 @@ Blocks every later phase that exposes the app.
 - [ ] Audit entry per cloud call: destination, model, masking result, bytes sent. No content unless `AUDIT_CONTENT=1`.
 - [ ] "Own GPU pod" recipe: vLLM bound to localhost inside the pod, reached only through a tunnel, prompts on ephemeral disk. State plainly in the UI and docs that the pod host can read memory.
 - [ ] Providers page shows a privacy level per destination: local, own pod (masked text only), ordinary API.
+- [ ] State the limit in the docs and the Providers page: a prompt can be encrypted on the way to a rented GPU and on its disk, but the model has to read it in plain form in the GPU's memory, so the machine's operator can see it. Masking on the box before sending is the control that works today.
 - [ ] Attested (TEE) providers: connector deferred. Recheck after the AMD SEV-SNP fixes due December 2026.
 
 ### Phase 5: host defence in the Docker prototype
@@ -84,6 +87,14 @@ Blocks every later phase that exposes the app.
 - [ ] Credentials in the SQLCipher vault only. Writes (send, create, delete) go through the confirm gate.
 - [ ] Privacy level shown for each connector and channel (APP-11).
 - [ ] Check the `imapclient` licence before adding it; the API reported no SPDX id.
+
+Owner decision 2026-11-25: automation hubs and a mail front end ship out of the box. This reverses the earlier rejection of Composio. All are off until the owner connects them.
+
+- [ ] Hub connectors: Composio, Zapier, Make (cloud services) and n8n (self-hosted). One adapter interface; each exposes its actions to the router as tools. Every write goes through the confirm gate and the audit log.
+- [ ] Privacy level per hub on the Connectors page: n8n on the box = local; Composio, Zapier and Make = cloud (the service sees the data and holds the account tokens). Their hosts are added to the outbound allowlist only while the hub is connected; block-list and masking rules apply to what is sent.
+- [ ] n8n: its licence is not open source (GitHub reports no SPDX id; read the Sustainable Use License before shipping it inside a sold box). Safe default: connect to an n8n the owner runs, do not bundle it.
+- [ ] Mail front end on local models: evaluate Mail-0/Zero (MIT, active 2026-11) and elie222/inbox-zero (active 2026-11; licence has no SPDX id, read it first). Point the chosen one's model setting at PAI's LiteLLM address so triage and drafting run on the box. Run a skillspector-style review and pin by digest before adding either.
+- [ ] Both mail projects are built around Gmail and Outlook OAuth; confirm each works against plain IMAP before choosing, or keep the in-process `imapclient` path for other mailboxes.
 
 ### Phase 7: benchmarks (was item 10)
 
@@ -105,20 +116,19 @@ Blocks every later phase that exposes the app.
 ### Phase 9: store and hardware tiers (was items 1 and 12)
 
 - [ ] PAI OS free and open source with a link to the repo; paid support optional (already in pai-store PR #1).
-- [ ] Three hardware tiers at $500, $1,000 and $3,000, each with listed upgrades. Shown as planned prices with a waitlist button; no checkout until units are sourced.
+- [ ] Four hardware tiers at $500, $1,000, $3,000 and $5,000, each with listed upgrades. Shown as planned prices with a waitlist button; no checkout until units are sourced.
 - [ ] Remove the "60% off" lines and struck-through list prices in `ProductDescription.tsx`, `AppleBoxConfigurator.tsx` and `how-it-works/page.tsx`; those list prices were never charged.
 - [ ] Every tier page states that the network-security features are part of the free OS.
-- [ ] Specs per tier need the owner's sign-off. Part costs on 2026-10-31: 32 GB box $829 to $1,133; 128 GB Pro $3,919. Proposal: $500 = 16 GB entry box on a cheaper chassis than the current Starter; $1,000 = 32 GB Starter; $3,000 = 64 GB with GPU dock option. Upgrades: memory, storage, GPU dock, second box.
+- [ ] Owner decision 2026-11-25: $3,000 = 64 GB, $5,000 = 128 GB. Part costs on 2026-10-31: 64 GB $1,753; 128 GB Pro $3,919; 32 GB box $829 to $1,133. Still a proposal, not yet confirmed: $500 = 16 GB entry box on a cheaper chassis than the current Starter; $1,000 = 32 GB Starter. Upgrades: memory, storage, GPU dock, second box.
 
 ### Later
 
 - Chat channels (was item 4): Hermes Agent as a relay with all toolsets off, no vault key, bridge network, one allowlisted user. Add a thin `/v1/chat/completions` route over `reply_to()` so the router, confirm gate and audit log stay the only authority. Signal or Matrix with encryption required. Confirmations stay in the web app.
-- Computer control (was item 5): one sandbox image (rootless Podman, read-only, capabilities dropped, pid, memory and CPU limits, no Docker socket), KasmVNC viewer on the overlay interface only, every action through the confirm gate. Open question for the owner: does "control the computer" mean the owner's own shell, or the assistant acting on the desktop?
+- Computer control (was item 5): one sandbox image (rootless Podman, read-only, capabilities dropped, pid, memory and CPU limits, no Docker socket), KasmVNC viewer on the overlay interface only, every action through the confirm gate. Owner decision 2026-11-25: both the owner's own shell and the assistant acting on the desktop. The owner prefers Rakazo (already run in the fleet as a browser sandbox appliance) as the remote desktop; vet it first (licence, upstream health, whether it can sit behind PAI's confirm gate and audit log) and fall back to the sandbox-plus-KasmVNC design if it fails.
 - Suricata or Falco, opt-in, top tier only. Per-process egress control (Tetragon or OpenSnitch).
 
 ## Open questions for the owner
 
-1. Hardware specs per tier (Phase 9).
-2. Tailscale account by default, or Headscale by default?
-3. NVIDIA tier: enrol the Secure Boot key at the factory, or ship with Secure Boot off?
-4. Gmail and Outlook: OAuth or app passwords at launch?
+1. Specs for the $500 and $1,000 tiers (Phase 9); $3,000 = 64 GB and $5,000 = 128 GB are decided.
+2. NVIDIA tier: enrol the Secure Boot key at the factory, or ship with Secure Boot off?
+3. Gmail and Outlook: OAuth or app passwords at launch?

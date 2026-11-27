@@ -104,9 +104,12 @@ scripts/pai-up new-key
 **Linux:**
 
 ```bash
-install -d -m 700 "$HOME/.config/pai"
-( umask 077; openssl rand -hex 32 > "$HOME/.config/pai/vault-key" )
+scripts/pai-up new-key
 ```
+
+This encrypts the key with `systemd-creds` into `~/.config/pai/vault-key.cred` when that works without a password prompt (systemd 256+, or a user in the `tss` group for the TPM); otherwise it writes `~/.config/pai/vault-key` with mode 0600 in a mode-0700 directory. It never writes the key to `.env`.
+
+Already have a `PAI_VAULT_KEY=` line in `.env` from an older install? Run `scripts/pai-up migrate-key` instead: it stores that same key (so the existing vault still opens), checks it reads back, then removes the line from `.env`. If a different key is already stored it changes nothing and stops.
 
 Tell the owner where the key is and that they must back it up somewhere other than this computer. Do not show them the key in chat.
 
@@ -114,16 +117,10 @@ Tell the owner where the key is and that they must back it up somewhere other th
 
 The first start downloads the model and two voice models, so it takes a while (minutes on a fast connection). Do not interrupt it.
 
-**macOS:**
+On macOS and Linux alike, `scripts/pai-up` reads the key from where step 4 put it and passes it to Compose as a secret:
 
 ```bash
 scripts/pai-up --profile local up -d --build
-```
-
-**Linux:**
-
-```bash
-PAI_VAULT_KEY="$(cat "$HOME/.config/pai/vault-key")" docker compose --profile local up -d --build
 ```
 
 Wait for the app, polling every 10 seconds for up to 15 minutes:
@@ -149,12 +146,12 @@ Tell the owner:
 
 ## Day-to-day
 
-| Task | macOS | Linux |
-|---|---|---|
-| Stop (keeps data) | `scripts/pai-up --profile local stop` | `docker compose --profile local stop` |
-| Start again | `scripts/pai-up --profile local up -d` | `PAI_VAULT_KEY="$(cat ~/.config/pai/vault-key)" docker compose --profile local up -d` |
-| Update | `git pull`, then `scripts/pai-up --profile local up -d --build` | `git pull`, then the start command with `--build` |
-| Logs | `scripts/pai-up logs --tail 50 app` | `docker compose logs --tail 50 app` |
+| Task | macOS and Linux |
+|---|---|
+| Stop (keeps data) | `scripts/pai-up --profile local stop` |
+| Start again | `scripts/pai-up --profile local up -d` |
+| Update | `git pull`, then `scripts/pai-up --profile local up -d --build` |
+| Logs | `scripts/pai-up logs --tail 50 app` |
 
 Run these from `~/pai/prototype`. Containers restart on their own after a reboot once Docker is running. Recreating them needs the key again, which the commands above supply.
 
@@ -164,7 +161,7 @@ To remove PAI but keep the vault: stop the stack and delete nothing else. To rem
 
 | Symptom | Likely cause and fix |
 |---|---|
-| `No vault key` or the app exits at start | The key source was not supplied to this command. macOS: run through `scripts/pai-up`. Linux: use the exact start command with `PAI_VAULT_KEY=...`. Check `~/.config/pai/vault-key` exists and is non-empty. |
+| `No vault key` or the app exits at start | The key source was not supplied to this command. Start through `scripts/pai-up`, not plain `docker compose`. `scripts/pai-up has-key` must exit 0; on Linux check that `~/.config/pai/vault-key.cred` or `~/.config/pai/vault-key` exists and is non-empty. |
 | `set LITELLM_MASTER_KEY in .env` | `.env` is missing or not in `~/pai/prototype`. Redo step 3. |
 | Error mentioning `secrets` or `environment` | Docker Compose is too old. Upgrade Docker. |
 | `port is already allocated` on 8088 | Another program uses it. Add `PAI_PORT=8089` to `.env` (ask the owner first) and use that port in every URL above. |
@@ -175,7 +172,7 @@ To remove PAI but keep the vault: stop the stack and delete nothing else. To rem
 
 ## Known limits
 
-- Prototype: no login, image tags are not pinned, no signed or A/B updates.
+- Prototype: no login, no signed or A/B updates. Images are pinned by digest.
 - No speed or accuracy numbers have been measured yet.
 - Voice, memory, rules and the activity log work on this computer. Channels such as Telegram and email, and a hardware OS image, are not built.
 

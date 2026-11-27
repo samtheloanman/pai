@@ -1,5 +1,7 @@
 # PAI Network Security Auditor & Engineer (LAN Guardian)
 
+> **Scope (decided 2026-11-24):** this document describes a later, opt-in tier, not the MVP. PRD requirement LAN-2 governs: in the MVP PAI protects the box itself and does not inspect, block or redirect other devices' traffic, because that only works when PAI is the home router (an open decision). Zeek is rejected as too heavy; Suricata or Falco is opt-in for the top hardware tier only. Where this document and the PRD disagree, the PRD wins.
+
 **Objective:** Transform the PAI appliance into an autonomous on-box network security engineer and LAN auditor for home and office environments.
 
 ---

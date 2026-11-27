@@ -18,14 +18,17 @@ if [ ! -f .env ]; then
   echo "[+] Generating .env configuration..."
   cp .env.example .env
   MASTER_KEY="sk-$(openssl rand -hex 16)"
-  VAULT_KEY="$(openssl rand -hex 32)"
   sed -i '' "s/sk-change-me/${MASTER_KEY}/" .env 2>/dev/null || sed -i "s/sk-change-me/${MASTER_KEY}/" .env
-  echo "PAI_VAULT_KEY=${VAULT_KEY}" >> .env
 fi
+
+# 1b. Vault key: kept outside .env (Keychain / systemd-creds / 0600 file, see scripts/pai-up).
+#     An old PAI_VAULT_KEY line in .env is moved into the key store and removed from .env.
+scripts/pai-up migrate-key
+scripts/pai-up has-key || scripts/pai-up new-key
 
 # 2. Start container stack
 echo "[+] Starting PAI services (LiteLLM, Speaches, LLM, App)..."
-docker compose --profile local up -d --build
+scripts/pai-up --profile local up -d --build
 
 # 3. Healthcheck loop
 echo "[+] Awaiting service readiness..."

@@ -124,6 +124,8 @@ Allows PAI to autonomously reverse-engineer, headless-wrap, and replace SaaS/des
 - **Sandboxing:** All generated tools run in ephemeral, unprivileged Podman sandboxes with read-only root filesystems and zero access to `/var/pai/pai.db`.
 
 ### 5.5 LAN Security Guardian
+> **Scope:** PRD LAN-2 governs. In the MVP these controls apply to the PAI box's own traffic only. Applying the DNS sinkhole and the DoH block to other devices needs PAI to be the home router, which is an open decision. The box itself resolves through local Unbound and never through a public DoH service.
+
 - **Passive Device Discovery:** Real-time kernel ARP/NDP packet listener (`arpwatch` style) detects new MAC addresses the moment they join the Wi-Fi/LAN without active port sweeps.
 - **DNS Sinkhole:** Local `unbound` resolver with blocklists sinkholes telemetry from smart TVs, IoT cameras, and ad trackers.
 - **DoH Interception:** `nftables` intercepts outbound port 53 and blocks known public DoH IP addresses (Cloudflare, Google, Quad9) to prevent DNS sinkhole evasion.
